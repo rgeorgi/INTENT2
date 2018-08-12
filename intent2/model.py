@@ -117,6 +117,7 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin):
         return self.string == other.string and self.index == other.index
 
     @property
+    # TODO: This will break when there are identical items in the phrase...
     def index(self): return self.phrase.index(self) if self.phrase else None
 
     @property
@@ -147,6 +148,9 @@ class SubWord(TaggableMixin, AlignableMixin, DependencyMixin, StringMixin):
 
 
 class Phrase(list):
+    """
+    A Phrase object contains a list of words.
+    """
     def __init__(self, iterable=None):
         if iterable is None: iterable = []
         super().__init__(iterable)
