@@ -19,7 +19,29 @@ class CharacterIdenticalTests(unittest.TestCase):
 
         self.assertTrue(is_character_identical(lang_line, morph_line))
 
+def clean_subword_string(subword_string):
+    """
+    Remove the characters that a subword is split on.
 
+    :param subword_string:
+    """
+    return subword_string.replace('-', '')
+
+def phrase_tokenize(phrase_string):
+    """
+    Modularizing the tokenization for phrases.
+
+    :param phrase_string:
+    :return:
+    """
+    split_phrase = re.findall('\w+', phrase_string)
+    return split_phrase
+
+def word_tokenize(word_string):
+    """
+    Given a word, return the sets of subwords that compose it.
+    """
+    return [morph for morph in re.split('[\s\-]+', word_string) if morph.strip()]
 
 def character_align(word_string, subword_string, skip_re='[\-\s]'):
     """

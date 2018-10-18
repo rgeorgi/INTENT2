@@ -36,6 +36,17 @@ class TaggableMixin(object):
     @pos.setter
     def pos(self, val): setattr(self, '_pos', val)
 
+class GlossableMixin(object):
+    """
+    A mixin for items that can have glosses associated with
+    them
+    """
+    @property
+    def gloss(self): return getattr(self, '_gloss', None)
+
+    @gloss.setter
+    def gloss(self, val): setattr(self, '_gloss', val)
+
 class DependencyMixin(object):
     """
     A mixin for items that can have POS dependencies.
@@ -96,13 +107,18 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin):
 
     For word-level items. Every word must contain at least one subword.
     """
-    def __init__(self, string=None, subwords=None):
+    def __init__(self, string=None, subwords=None, id=None):
         assert (string or subwords) and not (string and subwords)
         if string is not None:
             self._subwords = [SubWord(string, word=self)]
         else:
             self._subwords = subwords
+            for i, sw in enumerate(self._subwords):
+                if isinstance(sw, str):
+                    self._subwords[i] = SubWord(sw)
+                self._subwords[i].word = self
         self._phrase = None
+        self._id = id
 
     def __repr__(self):
         return '(w: {} [{}])'.format(', '.join([repr(sw) for sw in self.subwords]), self.index)
@@ -114,17 +130,15 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin):
         """
         Equals method that doesn't muck with the == method.
         """
-        return self.string == other.string and self.index == other.index
+        return (self.string == other.string and self.index == other.index and
+                ((self.id is None or other.id is None) or (self.id == other.id)))
 
     @property
     # TODO: This will break when there are identical items in the phrase...
     def index(self): return self.phrase.index(self) if self.phrase else None
 
     @property
-    def string(self): return ''.join([str(s) for s in self._subwords])
-
-    @property
-    def hyphenated(self): return '-'.join([str(s) for s in self._subwords])
+    def string(self): return '-'.join([str(s) for s in self._subwords])
 
     @property
     def phrase(self): return self._phrase
@@ -132,9 +146,13 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin):
     @property
     def subwords(self): return self._subwords
 
+    @property
+    def word(self): return self
+
 class SubWord(TaggableMixin, AlignableMixin, DependencyMixin, StringMixin):
-    def __init__(self, s, word=None):
+    def __init__(self, s, word=None, id=None):
         self.string = s
+        self._id = id
         if word is not None:
             self.word = word
 
@@ -170,6 +188,12 @@ class Phrase(list):
     @classmethod
     def from_string(cls, s):
         return cls([Word(w) for w in s.split()])
+
+    def __iter__(self):
+        """
+        :rtype: Word
+        """
+        return super().__iter__()
 
     @property
     def hyphenated(self): return ' '.join([w.hyphenated for w in self])

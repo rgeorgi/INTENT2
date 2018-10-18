@@ -1,6 +1,4 @@
-import xigt.ref
-import xigt.consts
-import xigt.mixins
+import xigt
 import re
 
 def ref_match(o, target_ref, ref_type):
