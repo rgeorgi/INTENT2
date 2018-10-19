@@ -107,18 +107,20 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin):
 
     For word-level items. Every word must contain at least one subword.
     """
-    def __init__(self, string=None, subwords=None, id=None):
+    def __init__(self, string=None, subwords=None):
         assert (string or subwords) and not (string and subwords)
         if string is not None:
-            self._subwords = [SubWord(string, word=self)]
+            self._subwords = [SubWord(string, word=self, index=0)]
         else:
             self._subwords = subwords
             for i, sw in enumerate(self._subwords):
                 if isinstance(sw, str):
                     self._subwords[i] = SubWord(sw)
                 self._subwords[i].word = self
+                self._subwords[i]._index = i
         self._phrase = None
         self._id = id
+        self._index = None
 
     def __repr__(self):
         return '(w: {} [{}])'.format(', '.join([repr(sw) for sw in self.subwords]), self.index)
@@ -134,8 +136,7 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin):
                 ((self.id is None or other.id is None) or (self.id == other.id)))
 
     @property
-    # TODO: This will break when there are identical items in the phrase...
-    def index(self): return self.phrase.index(self) if self.phrase else None
+    def index(self): return self._index
 
     @property
     def string(self): return '-'.join([str(s) for s in self._subwords])
@@ -150,9 +151,10 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin):
     def word(self): return self
 
 class SubWord(TaggableMixin, AlignableMixin, DependencyMixin, StringMixin):
-    def __init__(self, s, word=None, id=None):
+    def __init__(self, s, word=None, index=None):
         self.string = s
         self._id = id
+        self._index = index
         if word is not None:
             self.word = word
 
@@ -161,6 +163,10 @@ class SubWord(TaggableMixin, AlignableMixin, DependencyMixin, StringMixin):
 
     @word.setter
     def word(self, w): self._word = w
+
+    @property
+    def index(self):
+        return '{}.{}'.format(self.word.index, self._index)
 
     def __repr__(self): return '<sw: {}>'.format(self.string)
 
@@ -174,8 +180,10 @@ class Phrase(list):
         super().__init__(iterable)
         for w in self:
             w._phrase = self
+        self.make_indices()
 
     def add_word(self, w: Word):
+        w._index = len(self)
         self.append(w)
         w._phrase = self
 
@@ -198,9 +206,46 @@ class Phrase(list):
     @property
     def hyphenated(self): return ' '.join([w.hyphenated for w in self])
 
+    def make_indices(self):
+        """
+        Use this to "finalize" a phrase, and assign indices to the words
+        contained within it.
+        """
+        for i, word in enumerate(self):
+            self[i]._index = i
+
     def __str__(self): return ' '.join([str(s) for s in self])
 
     def __repr__(self): return '[p: {}]'.format(', '.join([repr(s) for s in self]))
+
+class Instance(object):
+    def __init__(self, lang=None, gloss=None, trans=None):
+        """
+        :type lang: Phrase
+        :type gloss: Phrase
+        :type trans: Phrase
+        """
+        self.lang=lang
+        self.gloss=gloss
+        self.trans=trans
+
+    def __str__(self):
+        max_token_len = [0 for i in range(max(len(self.lang), len(self.gloss)))]
+
+        def compare_len(phrase):
+            for i, word in enumerate(phrase):
+                max_token_len[i] = max(max_token_len[i], len(str(word)))
+
+        compare_len(self.lang)
+        compare_len(self.gloss)
+
+        ret_str = ''
+        for phrase in [self.lang, self.gloss]:
+            for i, word in enumerate(phrase):
+                ret_str += '{{:<{}}}'.format(max_token_len[i]+2).format(str(word))
+            ret_str += '\n'
+
+        return ret_str + str(self.trans)
 
 # -------------------------------------------
 # Tests
