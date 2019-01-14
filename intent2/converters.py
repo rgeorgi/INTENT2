@@ -160,5 +160,5 @@ def read_toolbox(toolbox_path):
 
 
 if __name__ == '__main__':
-    # read_xigt('/Users/rgeorgi/Documents/code/intent/data/testcases/khowell/abz_1igt_raw_tier.xml')
-    read_toolbox('/Users/rgeorgi/Documents/code/intent2/intent2/data/toolbox/AbuiCorpus.txt')
+    read_xigt('/Users/rgeorgi/Documents/code/intent/data/testcases/khowell/abz_1igt_raw_tier.xml')
+    # read_toolbox('/Users/rgeorgi/Documents/code/intent2/intent2/data/toolbox/AbuiCorpus.txt')

@@ -1,5 +1,6 @@
 import re
 import unittest
+import nltk
 
 from intent2.model import Phrase, SubWord, Word
 
@@ -27,17 +28,18 @@ def clean_subword_string(subword_string):
     """
     return subword_string.replace('-', '')
 
-def phrase_tokenize(phrase_string):
+def word_tokenize(phrase_string):
     """
     Modularizing the tokenization for phrases.
 
     :param phrase_string:
     :return:
     """
-    split_phrase = re.findall('\w+', phrase_string)
+    # split_phrase = re.findall('[\w\.\-\:]+', phrase_string)
+    split_phrase = nltk.word_tokenize(phrase_string)
     return split_phrase
 
-def word_tokenize(word_string):
+def morph_tokenize(word_string):
     """
     Given a word, return the sets of subwords that compose it.
     """

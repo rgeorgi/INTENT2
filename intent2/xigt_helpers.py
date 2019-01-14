@@ -18,6 +18,8 @@ def id_match(id): return lambda o: o.id == id
 def id_base_match(id_base): return lambda o: get_id_base(o.id) == id_base
 def attr_match(attr): return lambda o: set(attr.items()).issubset(set(o.attributes.items()))
 
+def tag_match(tag): return lambda o: tag in o.attributes.get('tag', '').split('+')
+
 def get_id_base(id_str):
     """
     Return the "base" of the id string. This should either be everything leading up to the final numbering, or a hyphen-separated letter.
@@ -66,6 +68,8 @@ def _build_filterlist(**kwargs):
             filters += [type_match(val)]
         elif kw == 'alignment':
             filters += [aln_match(val)]
+        elif kw == 'tag':
+            filters += [tag_match(val)]
 
         elif kw == 'others': # Append any other filters...
             filters += val

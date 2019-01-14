@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+from intent2.serialize.importers import parse_xigt_corpus
+from intent2.functions import heuristic_alignment, process_trans
+import argparse
+from xigt.codecs.xigtxml import load
+import os
+
+
+if __name__ == '__main__':
+    p = argparse.ArgumentParser()
+    p.add_argument('-i', '--input', help='inputfile', required=True)
+    p.add_argument('-v', '--verbose', help='Increase verbosity', action='count')
+
+    args = p.parse_args()
+
+    xc = load(args.input, 'r')
+    corp = parse_xigt_corpus(xc)
+
+    inst1 = corp[0]
+
+    # heuristic_alignment(inst1)
+    process_trans(inst1)
+

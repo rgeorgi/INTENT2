@@ -1,5 +1,5 @@
 import unittest
-
+from typing import Generator, Iterable, Iterator
 
 # -------------------------------------------
 # MIXINS
@@ -55,20 +55,43 @@ class DependencyMixin(object):
     Dependency is the item this item has an outgoing edge to
     """
     @property
-    def dependencies(self):
+    def _dependency_links(self):
         """
-        :rtype: list[DependencyLink]
+        :rtype: set[DependencyLink]
         """
         return getattr(self, '_dependencies', set([]))
 
-    @dependencies.setter
-    def dependencies(self, val): setattr(self, '_dependencies', val)
+    @_dependency_links.setter
+    def _dependency_links(self, val): setattr(self, '_dependencies', val)
+
+    @property
+    def dependencies(self):
+        """
+        :rtype: set[DependencyLink]
+        """
+        return {d for d in self._dependency_links if d.child == self}
+
+    @property
+    def dependents(self):
+        """
+        :rtype: set[DependencyLink]
+        """
+        return {d for d in self._dependency_links if d.parent == self}
+
+
 
     def add_dependent(self, dependent, type: str=None):
-        assert isinstance(dependent, DependencyMixin)
-        link = DependencyLink(dependent, self, type = type)
-        self.dependencies |= {link}
-        dependent.dependencies |= {link}
+        add_dependency_link(dependent, self, type=type)
+
+    def add_head(self, head, type: str=None):
+        add_dependency_link(self, head, type=type)
+
+def add_dependency_link(child, parent, type=None):
+    assert isinstance(child, DependencyMixin)
+    assert isinstance(parent, DependencyMixin)
+    link = DependencyLink(child, parent, type=type)
+    child._dependency_links |= {link}
+    parent._dependency_links |= {link}
 
 class StringMixin(object):
     """
@@ -126,20 +149,26 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin):
         return '(w: {} [{}])'.format(', '.join([repr(sw) for sw in self.subwords]), self.index)
 
     def __str__(self):
-        return self.string
+        return self.hyphenated
+
+    def __iter__(self):
+        """
+        :rtype: Iterator[SubWord]
+        """
+        return self._subwords.__iter__()
 
     def equals(self, other):
         """
         Equals method that doesn't muck with the == method.
         """
-        return (self.string == other.string and self.index == other.index and
+        return (self.hyphenated == other.hyphenated and self.index == other.index and
                 ((self.id is None or other.id is None) or (self.id == other.id)))
 
     @property
     def index(self): return self._index
 
     @property
-    def string(self): return '-'.join([str(s) for s in self._subwords])
+    def hyphenated(self): return '-'.join([str(s) for s in self._subwords])
 
     @property
     def phrase(self): return self._phrase
@@ -178,17 +207,35 @@ class Phrase(list):
     def __init__(self, iterable=None):
         if iterable is None: iterable = []
         super().__init__(iterable)
+        self._root = None
         for w in self:
             w._phrase = self
         self.make_indices()
+
+    @property
+    def root(self):
+        """:rtype: Word"""
+        return self._root
+
+    @root.setter
+    def root(self, val): self._root = val
 
     def add_word(self, w: Word):
         w._index = len(self)
         self.append(w)
         w._phrase = self
 
-    def __getitem__(self, i) -> Word:
+    def __getitem__(self, i):
+        """
+        :rtype: Word
+        """
         return super().__getitem__(i)
+
+    def __iter__(self):
+        """
+        :rtype: Iterator[Word]
+        """
+        return super().__iter__()
 
     def equals(self, other):
         return bool(len(self) == len(other) and [True for i, j in zip(self, other) if i.equals(j)])
@@ -196,12 +243,6 @@ class Phrase(list):
     @classmethod
     def from_string(cls, s):
         return cls([Word(w) for w in s.split()])
-
-    def __iter__(self):
-        """
-        :rtype: Word
-        """
-        return super().__iter__()
 
     @property
     def hyphenated(self): return ' '.join([w.hyphenated for w in self])
@@ -214,20 +255,40 @@ class Phrase(list):
         for i, word in enumerate(self):
             self[i]._index = i
 
-    def __str__(self): return ' '.join([str(s) for s in self])
+    def __str__(self):
+        return ' '.join([str(s) for s in self]) if self else ''
 
-    def __repr__(self): return '[p: {}]'.format(', '.join([repr(s) for s in self]))
+    def __repr__(self):
+        return '[p: {}]'.format(', '.join([repr(s) for s in self]))
+
+    @property
+    def dependencies(self):
+        """
+        Check all of the dependency relationships of the
+        words and return a dependency parse.
+
+        :return:
+        """
+        all_links = set([])
+        for word in self:
+            all_links |= word._dependency_links
+        return all_links
+
 
 class Instance(object):
+    """
+    This class represents an entire IGT instance. It supposes
+    that
+    """
     def __init__(self, lang=None, gloss=None, trans=None):
         """
         :type lang: Phrase
         :type gloss: Phrase
         :type trans: Phrase
         """
-        self.lang=lang
-        self.gloss=gloss
-        self.trans=trans
+        self.lang = lang
+        self.gloss = gloss
+        self.trans = trans
 
     def __str__(self):
         max_token_len = [0 for i in range(max(len(self.lang), len(self.gloss)))]
@@ -243,9 +304,35 @@ class Instance(object):
         for phrase in [self.lang, self.gloss]:
             for i, word in enumerate(phrase):
                 ret_str += '{{:<{}}}'.format(max_token_len[i]+2).format(str(word))
-            ret_str += '\n'
+            ret_str = ret_str + '\n' if phrase else ret_str
 
         return ret_str + str(self.trans)
+
+    def __repr__(self):
+        return '<IGT Instance with {} words>'.format(len(self.lang))
+
+class Corpus(object):
+    """
+    Class for holding a collection
+    of instances
+    """
+    def __init__(self, instances=None):
+        self._instances = instances if instances else None
+
+    def __iter__(self):
+        """
+        :rtype: Instance
+        """
+        for instance in self._instances:
+            yield instance
+
+    @property
+    def instances(self):
+        return self._instances
+
+    def __getitem__(self, item):
+        return self._instances[item]
+
 
 # -------------------------------------------
 # Tests
@@ -287,9 +374,9 @@ class PhraseTests(unittest.TestCase):
 
     def test_phrase(self):
         self.assertEqual(len(self.phrase), 3)
-        self.assertEqual(self.phrase[0].string, 'John')
-        self.assertEqual(self.phrase[1].string, 'ran')
-        self.assertEqual(self.phrase[2].string, 'around')
+        self.assertEqual(self.phrase[0].hyphenated, 'John')
+        self.assertEqual(self.phrase[1].hyphenated, 'ran')
+        self.assertEqual(self.phrase[2].hyphenated, 'around')
 
         self.assertEqual(self.wordA.index, 1)
         self.assertEqual(self.wordB.index, 0)
@@ -304,9 +391,9 @@ class PhraseTests(unittest.TestCase):
             self.assertTrue(w1.equals(w2))
         self.assertTrue(p.equals(p2))
         self.assertNotEqual(p, p2)
-        self.assertEqual(p[0].string, Word('Person').string)
-        self.assertEqual(p[1].string, Word('Spc').string)
-        self.assertEqual(p[2].string, Word('money').string)
+        self.assertEqual(p[0].hyphenated, Word('Person').hyphenated)
+        self.assertEqual(p[1].hyphenated, Word('Spc').hyphenated)
+        self.assertEqual(p[2].hyphenated, Word('money').hyphenated)
 
 
 class WordTests(unittest.TestCase):
@@ -325,7 +412,7 @@ class WordTests(unittest.TestCase):
         p = Phrase.from_string('That John is a different John from the one I know.')
         w1 = p[1]
         w5 = p[5]
-        self.assertEqual(w1.string, w5.string)
+        self.assertEqual(w1.hyphenated, w5.hyphenated)
         self.assertNotEqual(w1, w5)
 
 
