@@ -1,6 +1,9 @@
 import unittest
 from typing import Generator, Iterable, Iterator
 
+
+
+
 # -------------------------------------------
 # MIXINS
 # -------------------------------------------
@@ -78,6 +81,8 @@ class DependencyMixin(object):
         """
         return {d for d in self._dependency_links if d.parent == self}
 
+    @property
+    def dependency_links(self): return self._dependency_links
 
 
     def add_dependent(self, dependent, type: str=None):
@@ -100,11 +105,45 @@ class StringMixin(object):
     @property
     def string(self): return getattr(self, '_string')
 
+    def __str__(self): return self.string
+
+class MutableStringMixin(StringMixin):
+    @property
+    def string(self): return getattr(self, '_string')
+
     @string.setter
     def string(self, val): setattr(self, '_string', val)
 
-    def __str__(self): return self.string
 
+class LemmatizableMixin(object):
+    """
+    A mixin for objects that could be lemmatizable
+    """
+    @property
+    def lemma(self): return getattr(self, '_lemma')
+
+    @lemma.setter
+    def lemma(self, val): setattr(self, '_lemma', val)
+
+class VectorMixin(object):
+    """
+    A mixin to add a vector representation to objects
+    """
+    @property
+    def vector(self): return getattr(self, '_vector')
+
+    @vector.setter
+    def vector(self, val): setattr(self, '_vector', val)
+
+class SpacyTokenMixin(object):
+    """
+    A mixin to add a vector representation to objects
+    """
+    @property
+    def spacy_token(self): return getattr(self, '_spacy_token')
+
+    @spacy_token.setter
+    def spacy_token(self, val): setattr(self, '_spacy_token', val)
 
 # -------------------------------------------
 # Structures
@@ -124,7 +163,7 @@ class DependencyLink(object):
 # -------------------------------------------
 # Non-Mixin Classes
 # -------------------------------------------
-class Word(TaggableMixin, AlignableMixin, DependencyMixin):
+class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTokenMixin):
     """
     Word class
 
@@ -157,6 +196,12 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin):
         """
         return self._subwords.__iter__()
 
+    def __getitem__(self, item):
+        """
+        :rtype: SubWord
+        """
+        return self.subwords[item]
+
     def equals(self, other):
         """
         Equals method that doesn't muck with the == method.
@@ -171,16 +216,37 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin):
     def hyphenated(self): return '-'.join([str(s) for s in self._subwords])
 
     @property
+    def string(self): return ''.join([str(s) for s in self._subwords])
+
+    @property
     def phrase(self): return self._phrase
 
     @property
-    def subwords(self): return self._subwords
+    def subwords(self):
+        """:rtype: Iterable[SubWord]"""
+        return self._subwords
+
+    @property
+    def subword_parts(self):
+        """:rtype: Generator[tuple[float, str]]"""
+        for sw in self.subwords:
+            for part in sw.parts:
+                yield part
+
+    @property
+    def lemma(self):
+        assert len(self.subwords) == 1
+        return self[0].lemma
 
     @property
     def word(self): return self
 
-class SubWord(TaggableMixin, AlignableMixin, DependencyMixin, StringMixin):
-    def __init__(self, s, word=None, index=None):
+
+class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMixin):
+    """
+    Class to represent sub-word level items -- either morphemes or glosses.
+    """
+    def __init__(self, s, word: Word=None, index=None):
         self.string = s
         self._id = id
         self._index = index
@@ -195,7 +261,11 @@ class SubWord(TaggableMixin, AlignableMixin, DependencyMixin, StringMixin):
 
     @property
     def index(self):
-        return '{}.{}'.format(self.word.index, self._index)
+        return float('{}.{}'.format(self.word.index, self._index))
+
+    @property
+    def parts(self):
+        return ((self.index, part) for part in self.string.split('.'))
 
     def __repr__(self): return '<sw: {}>'.format(self.string)
 
@@ -208,9 +278,9 @@ class Phrase(list):
         if iterable is None: iterable = []
         super().__init__(iterable)
         self._root = None
-        for w in self:
+        for i, w in enumerate(self):
             w._phrase = self
-        self.make_indices()
+            w._index = i
 
     @property
     def root(self):
@@ -222,14 +292,18 @@ class Phrase(list):
 
     def add_word(self, w: Word):
         w._index = len(self)
-        self.append(w)
         w._phrase = self
+        self.append(w)
 
     def __getitem__(self, i):
         """
         :rtype: Word
         """
-        return super().__getitem__(i)
+        if isinstance(i, int):
+            return super().__getitem__(i)
+        if isinstance(i, float):
+            w_index, sw_index = (int(part) for part in str(i).split('.'))
+            return super().__getitem__(w_index)[sw_index]
 
     def __iter__(self):
         """
@@ -246,14 +320,6 @@ class Phrase(list):
 
     @property
     def hyphenated(self): return ' '.join([w.hyphenated for w in self])
-
-    def make_indices(self):
-        """
-        Use this to "finalize" a phrase, and assign indices to the words
-        contained within it.
-        """
-        for i, word in enumerate(self):
-            self[i]._index = i
 
     def __str__(self):
         return ' '.join([str(s) for s in self]) if self else ''
@@ -273,6 +339,16 @@ class Phrase(list):
         for word in self:
             all_links |= word._dependency_links
         return all_links
+
+    @property
+    def subwords(self):
+        """
+        Return all the subwords
+        :rtype: Generator[SubWord]
+        """
+        for word in self:
+            for subword in word:
+                yield subword
 
 
 class Instance(object):
