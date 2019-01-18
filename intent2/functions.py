@@ -243,6 +243,7 @@ def heuristic_alignment(inst: Instance, heur_list = None):
         new_alignments = alignment_pass(match_func)
 
         # 2) Remove alignments that would conflict with already defined alignments
+        # TODO: How best to merge newly proposed alignments?
         new_alignments = remove_conflicting_alignments(existing_alignments, new_alignments)
 
         # 3) Handle multiple alignmnets
@@ -251,7 +252,14 @@ def heuristic_alignment(inst: Instance, heur_list = None):
         # 4) Merge with existing alignments
         existing_alignments |= set(new_alignments)
 
-    print(sorted(existing_alignments))
+    # Now that we have all of the alignments, let's translate those
+    # into alignments on the words.
+    for word_index, gloss_index in existing_alignments:
+        trans_w = inst.trans[word_index]
+        gloss_m = inst.gloss[gloss_index]
+        trans_w.add_alignment(gloss_m)
+
+    print(inst.trans.alignments)
 
 def get_alignment_words(alignments: List[Tuple[int, float]]):
     return {word_index for word_index, gloss_index in alignments}
@@ -333,7 +341,7 @@ def project_dependencies(inst: Instance):
 # Alignment Testcases
 # -------------------------------------------
 from unittest import TestCase
-class AlignTests(TestCase):
+class MultipleAlignmentTests(TestCase):
 
     def test_many_to_many_alignments(self):
         multi_aln = [(0, 0.0), (0, 2.0), (1, 0.0), (1, 2.0), (1, 3.0), (2, 3.0), (3, 3.0)]
@@ -362,3 +370,34 @@ class AlignTests(TestCase):
 
     def test_no_alignments(self):
         self.assertListEqual([], handle_multiple_alignments([]))
+
+# -------------------------------------------
+# Projection Cases
+# -------------------------------------------
+
+# NOUN > VERB > ADJ > ADV > PRON > DET > ADP > CONJ > PRT > NUM > PUNC > X
+precedence = ['NOUN','VERB', 'ADJ', 'ADV', 'PRON', 'DET', 'ADP', 'CONJ', 'PRT', 'NUM', 'PUNC', 'X']
+
+def project_pos(inst: Instance):
+    """
+    Project part-of-speech tags using the bilingual alignment.
+    """
+    # There must be alignments present to project
+    assert inst.trans.alignments
+
+    # Now, iterate over the translation words, and project their
+    for trans_w in inst.trans:
+        for aligned_gloss in trans_w.alignments: # type: SubWord
+
+            # Check to see if the aligned gloss word already has
+            # a part-of-speech tag, or if it does have one, that
+            # it is a lower precedent than the proposed aligned tag.
+            if (not aligned_gloss.word.pos or
+                    precedence.index(aligned_gloss.word.pos) > precedence.index(trans_w.pos)):
+                aligned_gloss.word.pos = trans_w.pos
+
+    print(inst)
+    print(inst.gloss)
+    print([w.pos for w in inst.gloss])
+    print(inst.trans)
+    print([w.pos for w in inst.trans])

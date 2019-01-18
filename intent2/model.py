@@ -13,7 +13,11 @@ class AlignableMixin(object):
     another thing.
     """
     @property
-    def alignments(self): return getattr(self, '_alignment', set([]))
+    def alignments(self):
+        """
+        :rtype: set[AlignableMixin]
+        """
+        return getattr(self, '_alignment', set([]))
 
     @alignments.setter
     def alignments(self, val): setattr(self, '_alignment', val)
@@ -349,6 +353,18 @@ class Phrase(list):
         for word in self:
             for subword in word:
                 yield subword
+
+    @property
+    def alignments(self):
+        """
+        Return all the alignments
+        :rtype: Iterable[AlignableMixin]
+        """
+        alignments = []
+        for elt in self:
+            for aligned_elt in elt.alignments:
+                alignments.append((elt, aligned_elt))
+        return alignments
 
 
 class Instance(object):
