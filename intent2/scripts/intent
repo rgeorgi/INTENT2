@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 from intent2.serialize.importers import parse_xigt_corpus
-from intent2.functions import heuristic_alignment, process_trans
+from intent2.functions import heuristic_alignment, process_trans, project_pos
 import argparse
 from xigt.codecs.xigtxml import load
 import os
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
 
 if __name__ == '__main__':
@@ -16,8 +18,11 @@ if __name__ == '__main__':
     xc = load(args.input, 'r')
     corp = parse_xigt_corpus(xc)
 
-    inst1 = corp[0]
+    inst1 = corp[2]
 
     # heuristic_alignment(inst1)
     process_trans(inst1)
+    # process_gloss(inst1)
+    heuristic_alignment(inst1)
+    project_pos(inst1)
 
