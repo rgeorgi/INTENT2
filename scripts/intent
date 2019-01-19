@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from intent2.serialize.importers import parse_xigt_corpus
 from intent2.serialize.exporters import corpus_to_xigt, instance_to_xigt
-from intent2.functions import heuristic_alignment, process_trans, project_pos, gloss_to_morph_align
+from intent2.functions import heuristic_alignment, project_pos, project_dependencies
 import argparse
 from xigt.codecs.xigtxml import load
 import logging
@@ -16,6 +16,10 @@ if __name__ == '__main__':
     p.add_argument('-o', '--output', help='Output file', required=True)
     p.add_argument('-v', '--verbose', help='Increase verbosity', action='count')
 
+    p.add_argument('--no-align', action='store_true', help="Don't perform bilingual alignment. Also disables projection.")
+    p.add_argument('--no-posproject', action='store_true', help="Disable POS projection.")
+    p.add_argument('--no-dsproject', action='store_true', help="Disable DS projection")
+
     args = p.parse_args()
 
     ROOT_LOGGER.info('Loading Xigt corpus from "{}"'.format(args.input))
@@ -25,9 +29,25 @@ if __name__ == '__main__':
     corp = parse_xigt_corpus(xc)
 
     ROOT_LOGGER.info('Beginning INTENT2 enrichment...')
+
+    if args.no_align:
+        ROOT_LOGGER.info('Alignment disabled.')
+    if args.no_posproject:
+        ROOT_LOGGER.info('POS projection disabled.')
+    if args.no_dsproject:
+        ROOT_LOGGER.info("DS Projection disabled")
+
     for inst in corp:
-        heuristic_alignment(inst)
-        project_pos(inst)
+        if not args.no_align:
+            heuristic_alignment(inst)
+
+        # Only try projection if there
+        # are alignments.
+        if inst.trans.alignments:
+            if not args.no_posproject:
+                project_pos(inst)
+            if not args.no_dsproject:
+                project_dependencies(inst)
 
     with open(args.output, 'w') as out_f:
         out_f.write(corpus_to_xigt(corp))

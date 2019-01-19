@@ -26,7 +26,7 @@ def clean_subword_string(subword_string):
 
     :param subword_string:
     """
-    return re.sub('[\-=]', '', subword_string)
+    return re.sub('[\-=]+', '', subword_string)
 
 def word_tokenize(phrase_string):
     """

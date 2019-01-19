@@ -127,7 +127,7 @@ class StringMixin(object):
 
 class MutableStringMixin(StringMixin):
     @property
-    def string(self): return getattr(self, '_string')
+    def string(self) -> str: return getattr(self, '_string')
 
     @string.setter
     def string(self, val): setattr(self, '_string', val)
