@@ -63,7 +63,8 @@ def process_trans(inst: Instance, tag=True, parse=True):
         # Add Dependency Head
         if parse:
             if spacy_word.head.i != i:
-                trans_word.add_head(inst.trans[spacy_word.head.i])
+                trans_word.add_head(inst.trans[spacy_word.head.i],
+                                    type=spacy_word.dep_)
             # If spacy says that a word is its own head,
             # it is the root.
             else:
@@ -77,7 +78,27 @@ def process_trans(inst: Instance, tag=True, parse=True):
         trans_word[0].lemma = spacy_word.lemma_
         # TODO: Should there be a case where a translation word has more than one subword?
 
+    setattr(inst.trans, '_processed', True)
 
+
+# -------------------------------------------
+# Gloss-to-morph alignment
+# -------------------------------------------
+def gloss_to_morph_align(inst: Instance):
+    """
+    Given an instance, make sure that the glosses are aligned
+    to the language line morphemes correctly.
+    """
+    assert inst.lang and inst.gloss
+
+    lang_sw = list(inst.lang.subwords)
+    gloss_sw = list(inst.gloss.subwords)
+
+    if len(lang_sw) != len(gloss_sw):
+        raise Exception('Number of morphs and glosses differ.')
+
+    for i, gloss in enumerate(inst.gloss.subwords):
+        gloss.add_alignment(lang_sw[i])
 
 
 # -------------------------------------------
@@ -169,10 +190,13 @@ def heuristic_alignment(inst: Instance, heur_list = None):
     :type inst: Instance
     """
 
-    print(inst, end='\n\n')
-
     # To do heuristic alignment, we need minimally a gloss and translation line.
     assert inst.gloss and inst.trans and inst.lang
+
+    # We also need the translation line to have been processed for things like POS
+    # tags and lemmas.
+    if not hasattr(inst.trans, '_processed'):
+        process_trans(inst)
 
     # We don't need to store the sub-sub-word information that we will use to perform
     # alignment, but we want to get things like the lemmas and vector representations
@@ -259,7 +283,6 @@ def heuristic_alignment(inst: Instance, heur_list = None):
         gloss_m = inst.gloss[gloss_index]
         trans_w.add_alignment(gloss_m)
 
-    print(inst.trans.alignments)
 
 def get_alignment_words(alignments: List[Tuple[int, float]]):
     return {word_index for word_index, gloss_index in alignments}
@@ -389,15 +412,21 @@ def project_pos(inst: Instance):
     for trans_w in inst.trans:
         for aligned_gloss in trans_w.alignments: # type: SubWord
 
-            # Check to see if the aligned gloss word already has
+            # Check to see if the aligned gloss already has
             # a part-of-speech tag, or if it does have one, that
             # it is a lower precedent than the proposed aligned tag.
-            if (not aligned_gloss.word.pos or
-                    precedence.index(aligned_gloss.word.pos) > precedence.index(trans_w.pos)):
-                aligned_gloss.word.pos = trans_w.pos
+            if (not aligned_gloss.pos or
+                precedence.index(aligned_gloss.pos) > precedence.index(trans_w.pos)):
+                aligned_gloss.pos = trans_w.pos
 
-    print(inst)
-    print(inst.gloss)
-    print([w.pos for w in inst.gloss])
-    print(inst.trans)
-    print([w.pos for w in inst.trans])
+    combine_subword_tags(inst.gloss)
+
+def combine_subword_tags(p: Phrase):
+    """
+    Take a pass over a  phrase, and combine
+    the subword-level part-of-speech tags
+    """
+    for word in p:
+        tags = [subword.pos for subword in word]
+        best_tag = sorted(tags, key=lambda tag: precedence.index(tag))[0]
+        word.pos = best_tag

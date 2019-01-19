@@ -26,7 +26,7 @@ def clean_subword_string(subword_string):
 
     :param subword_string:
     """
-    return subword_string.replace('-', '')
+    return re.sub('[\-=]', '', subword_string)
 
 def word_tokenize(phrase_string):
     """
@@ -43,7 +43,7 @@ def morph_tokenize(word_string):
     """
     Given a word, return the sets of subwords that compose it.
     """
-    return [morph for morph in re.split('[\s\-]+', word_string) if morph.strip()]
+    return [morph for morph in re.split('[\s\-=]+', word_string) if morph.strip()]
 
 def character_align(word_string, subword_string, skip_re='[\-\s]'):
     """

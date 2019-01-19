@@ -3,8 +3,9 @@ from collections import defaultdict
 
 import xigt
 import xigt.codecs.xigtxml
+from xigt.model import Igt
 from intent2.xigt_helpers import xigt_find
-from intent2.model import Word, SubWord, Phrase, TaggableMixin, Instance
+from intent2.model import Word, SubWord, Phrase, TaggableMixin, Instance, Corpus
 from intent2.utils.strings import morph_tokenize, clean_subword_string, word_tokenize
 
 # -------------------------------------------
@@ -232,7 +233,7 @@ def parse_lang_tier(inst, id_to_object_mapping):
     segmentation_tier = xigt_find(inst, segmentation='w') or []
 
     if not words_tier:
-        return Phrase()
+        return Phrase(id='w')
 
     return load_words(words_tier, segmentation_tier, id_to_object_mapping)
 
@@ -255,7 +256,7 @@ def parse_gloss_tier(inst, id_to_object_mapping):
         gloss_subwords = []
         word_groups = defaultdict(list)
         for gloss_item in gloss_tier:  # type: xigt.model.Item
-            sw = SubWord(clean_subword_string(gloss_item.value()))
+            sw = SubWord(clean_subword_string(gloss_item.value()), id=gloss_item.id)
             id_to_object_mapping[gloss_item.id] = sw
             gloss_subwords.append(sw)
             if gloss_item.alignment and id_to_object_mapping.get(gloss_item.alignment):
@@ -281,9 +282,9 @@ def parse_gloss_tier(inst, id_to_object_mapping):
             gloss_words.append(gw)
 
     else:
-        return Phrase()
+        return Phrase(id='gw')
 
-    return Phrase(gloss_words)
+    return Phrase(gloss_words, id='gw')
 
 def load_words(tier, segmentation_tier, id_to_object_mapping, segment=True):
     """
@@ -309,17 +310,21 @@ def load_words(tier, segmentation_tier, id_to_object_mapping, segment=True):
             morph_segments = []
         if morph_segments:
             morphs = []
-            for morph in morph_segments:  # type: xigt.model.Item
-                sw = SubWord(clean_subword_string(morph.value()))
-                id_to_object_mapping[morph.id] = sw
+            for xigt_subword in morph_segments:  # type: xigt.model.Item
+                sw = SubWord(clean_subword_string(xigt_subword.value()), id=xigt_subword.id)
+                id_to_object_mapping[xigt_subword.id] = sw
+
+                if xigt_subword.alignment and id_to_object_mapping.get(xigt_subword.alignment):
+                    sw.add_alignment(id_to_object_mapping.get(xigt_subword.alignment))
+
                 morphs.append(sw)
-            w = Word(subwords=morphs)
+            w = Word(subwords=morphs, id='{}{}'.format(tier.id, len(words)+1))
 
         # Else if we want to segment the words
         elif segment:
-            w = Word(subwords=morph_tokenize(xigt_word_item.value()))
+            w = Word(subwords=morph_tokenize(xigt_word_item.value()), id=xigt_word_item.id)
         else:
-            w = Word(xigt_word_item.value())
+            w = Word(xigt_word_item.value(), id=xigt_word_item.id)
 
         id_to_object_mapping[xigt_word_item.id] = w
         words.append(w)
@@ -342,12 +347,14 @@ def parse_trans_tier(inst, id_to_object_mapping):
         return load_words(trans_words_tier, None, id_to_object_mapping)
 
     if not trans_tier:
-        return Phrase()
+        return Phrase(id='tw')
     elif len(trans_tier) > 1:
         # print(xigt.codecs.xigtxml.encode_igt(inst))
         sys.stderr.write('NOT IMPLEMENTED: Multiple Translations!\n')
 
-    return Phrase([Word(s) for s in word_tokenize(trans_tier[0].value())])
+    return Phrase([Word(s, id='{}{}'.format('tw', i+1))
+                   for i, s in enumerate(word_tokenize(trans_tier[0].value()))],
+                  id='tw')
 
 def parse_pos(inst, pos_id, id_to_object_mapping):
     pos_tag_tier = xigt_find(inst, alignment=pos_id, type='pos') or []
@@ -358,17 +365,16 @@ def parse_pos(inst, pos_id, id_to_object_mapping):
 
 
 
-
 # -------------------------------------------
 # Now, parse into INTENT2 model
 # -------------------------------------------
 def parse_xigt_corpus(xigt_corpus):
     """
     :type xigt_corpus: xigt.model.XigtCorpus
-    :rtype: list[xigt.model.Igt]
+    :rtype: Corpus
     """
     from intent2.model import Corpus
-    return Corpus([parse_xigt(inst) for inst in xigt_corpus])
+    return Corpus([parse_xigt_instance(xigt_inst) for xigt_inst in xigt_corpus])
 
 def parse_odin(xigt_inst, tag):
     """
@@ -386,8 +392,7 @@ def parse_odin(xigt_inst, tag):
 
     return Phrase()
 
-
-def parse_xigt(xigt_inst):
+def parse_xigt_instance(xigt_inst: Igt):
     """
     Given a Xigt instance, parse it into the INTENT2 objects
     for processing.
@@ -423,7 +428,7 @@ def parse_xigt(xigt_inst):
     parse_pos(xigt_inst, 'm', id_to_object_mapping)
     parse_pos(xigt_inst, 'w', id_to_object_mapping)
 
-    inst = Instance(lang_p, gloss_p, trans_p)
+    inst = Instance(lang_p, gloss_p, trans_p, id=xigt_inst.id)
     return inst
 
 
@@ -490,7 +495,7 @@ if __name__ == '__main__':
     <item id="n3" tag="T">in the seventh month (in July) we go to work in the fields</item>
   </tier>
 </igt></xigt-corpus>''')[0]
-    i = parse_xigt(inst)
+    i = parse_xigt_instance(inst)
     print(repr(i.lang))
 
     # with open(args.xc, 'r') as f:

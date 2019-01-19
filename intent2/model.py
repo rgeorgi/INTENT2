@@ -1,5 +1,5 @@
 import unittest
-from typing import Generator, Iterable, Iterator
+from typing import Generator, Iterable, Iterator, Union
 
 
 
@@ -15,7 +15,7 @@ class AlignableMixin(object):
     @property
     def alignments(self):
         """
-        :rtype: set[AlignableMixin]
+        :rtype: set[Union[Word,SubWord]]
         """
         return getattr(self, '_alignment', set([]))
 
@@ -31,6 +31,20 @@ class AlignableMixin(object):
         assert isinstance(other, AlignableMixin)
         self.alignments -= {other}
         other.alignments -= {self}
+
+class IdMixin(object):
+    @property
+    def id(self): return getattr(self, '_id', None)
+
+    @id.setter
+    def id(self, val): setattr(self, '_id', val)
+
+class IndexableMixin(object):
+    @property
+    def index(self): return getattr(self, '_index', None)
+
+    @index.setter
+    def index(self, val): setattr(self, '_index', val)
 
 class TaggableMixin(object):
     """
@@ -167,13 +181,13 @@ class DependencyLink(object):
 # -------------------------------------------
 # Non-Mixin Classes
 # -------------------------------------------
-class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTokenMixin):
+class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTokenMixin, IdMixin):
     """
     Word class
 
     For word-level items. Every word must contain at least one subword.
     """
-    def __init__(self, string=None, subwords=None):
+    def __init__(self, string=None, subwords=None, id=None):
         assert (string or subwords) and not (string and subwords)
         if string is not None:
             self._subwords = [SubWord(string, word=self, index=0)]
@@ -185,8 +199,8 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTok
                 self._subwords[i].word = self
                 self._subwords[i]._index = i
         self._phrase = None
-        self._id = id
         self._index = None
+        self._id = id
 
     def __repr__(self):
         return '(w: {} [{}])'.format(', '.join([repr(sw) for sw in self.subwords]), self.index)
@@ -246,14 +260,14 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTok
     def word(self): return self
 
 
-class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMixin):
+class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMixin, IdMixin):
     """
     Class to represent sub-word level items -- either morphemes or glosses.
     """
-    def __init__(self, s, word: Word=None, index=None):
+    def __init__(self, s, word: Word=None, index=None, id=None):
         self.string = s
-        self._id = id
         self._index = index
+        self._id = id
         if word is not None:
             self.word = word
 
@@ -274,17 +288,18 @@ class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMix
     def __repr__(self): return '<sw: {}>'.format(self.string)
 
 
-class Phrase(list):
+class Phrase(list, IdMixin):
     """
     A Phrase object contains a list of words.
     """
-    def __init__(self, iterable=None):
+    def __init__(self, iterable=None, id=None):
         if iterable is None: iterable = []
         super().__init__(iterable)
         self._root = None
         for i, w in enumerate(self):
             w._phrase = self
             w._index = i
+        self.id = id
 
     @property
     def root(self):
@@ -337,7 +352,7 @@ class Phrase(list):
         Check all of the dependency relationships of the
         words and return a dependency parse.
 
-        :return:
+        :rtype: set[DependencyLink]
         """
         all_links = set([])
         for word in self:
@@ -367,12 +382,12 @@ class Phrase(list):
         return alignments
 
 
-class Instance(object):
+class Instance(IdMixin):
     """
     This class represents an entire IGT instance. It supposes
     that
     """
-    def __init__(self, lang=None, gloss=None, trans=None):
+    def __init__(self, lang=None, gloss=None, trans=None, id=None):
         """
         :type lang: Phrase
         :type gloss: Phrase
@@ -381,6 +396,7 @@ class Instance(object):
         self.lang = lang
         self.gloss = gloss
         self.trans = trans
+        self._id = id
 
     def __str__(self):
         max_token_len = [0 for i in range(max(len(self.lang), len(self.gloss)))]
@@ -413,16 +429,17 @@ class Corpus(object):
 
     def __iter__(self):
         """
-        :rtype: Instance
+        :rtype: Iterator[Instance]
         """
-        for instance in self._instances:
-            yield instance
+        return self._instances.__iter__()
 
     @property
     def instances(self):
+        """:rtype: list[Instance]"""
         return self._instances
 
     def __getitem__(self, item):
+        """:rtype: Instance"""
         return self._instances[item]
 
 

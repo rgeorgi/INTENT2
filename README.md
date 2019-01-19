@@ -2,7 +2,7 @@
 
 INTENT2 is a rewrite of the [INterlinear Text ENrichment Toolkit](https://github.com/rgeorgi/INTENT2.git), updating the codebase to be cleaner, and pure python whenever possible.
 
-INTENT2 ingests [Xigt](https://github.com/xigt/)-formatted Interlinear Glossed Text, and performs:
+INTENT2 ingests [Xigt](https://github.com/xigt/xigt)-formatted Interlinear Glossed Text, and performs:
 
 - Heuristic alignment between translation and gloss lines
 - Part-of-speech tagging
@@ -14,3 +14,14 @@ INTENT2 ingests [Xigt](https://github.com/xigt/)-formatted Interlinear Glossed T
 
 
 Currently, the code is in an alpha stage. Not all of the functionality is implemented, and what is may contain bugs.
+
+## Input Requirements
+
+INTENT2 requires a [Xigt](https://github.com/xigt/xigt) input file that contains instances with:
+
+- **Language Line** of `type="words"`
+- For morpheme-level analysis, either:
+  - a `segmentation=w` tier pre-segmented, or
+  - Usage of hyphens for morpheme boundaries `-` and equals `=` for clitics within the words of the language line.
+- **Gloss Line** of `type="glosses"`
+- **Translation Line** of `type=translations` 
