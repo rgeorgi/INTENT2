@@ -30,6 +30,7 @@ def load_spacy():
     """
     global SPACY_ENG
     if SPACY_ENG is None:
+        ENRICH_LOG.info('spaCy model was not previously loaded. Now loading...')
         SPACY_ENG = spacy.load('en_core_web_lg')  # type: Language
     return SPACY_ENG
 
@@ -47,6 +48,7 @@ def process_trans(inst: Instance, tag=True, parse=True):
     trans_string = spacy_eng.tokenizer.tokens_from_list([w.string for w in inst.trans])
 
     # Tag and parse
+    ENRICH_LOG.info('Tagging and parsing translation line "{}"'.format(inst.trans.hyphenated))
     spacy_eng.tagger(trans_string)
     spacy_eng.parser(trans_string)
 
@@ -183,20 +185,24 @@ gramdict = {'1sg': ['i', 'me'],
             'neg': ["n't", 'not'],
             '2pl': ['you']}
 
+def process_trans_if_needed(inst: Instance):
+    if not hasattr(inst.trans, '_processed'):
+        process_trans(inst)
+
 def heuristic_alignment(inst: Instance, heur_list = None):
     """
     Implement the alignment between words
 
     :type inst: Instance
     """
+    ALIGN_LOG.info('Attempting heuristic alignment for instance "{}"'.format(inst.id))
 
     # To do heuristic alignment, we need minimally a gloss and translation line.
     assert inst.gloss and inst.trans and inst.lang
 
     # We also need the translation line to have been processed for things like POS
     # tags and lemmas.
-    if not hasattr(inst.trans, '_processed'):
-        process_trans(inst)
+    process_trans_if_needed(inst)
 
     # We don't need to store the sub-sub-word information that we will use to perform
     # alignment, but we want to get things like the lemmas and vector representations
@@ -399,14 +405,17 @@ class MultipleAlignmentTests(TestCase):
 # -------------------------------------------
 
 # NOUN > VERB > ADJ > ADV > PRON > DET > ADP > CONJ > PRT > NUM > PUNC > X
-precedence = ['NOUN','VERB', 'ADJ', 'ADV', 'PRON', 'DET', 'ADP', 'CONJ', 'PRT', 'NUM', 'PUNC', 'X']
+precedence = ['PROPN', 'NOUN','VERB', 'ADJ', 'ADV', 'PRON', 'DET', 'ADP', 'CONJ', 'PRT', 'NUM', 'PUNC', 'X']
 
 def project_pos(inst: Instance):
     """
     Project part-of-speech tags using the bilingual alignment.
     """
+    ENRICH_LOG.info('Projecting part-of-speech tags.')
+
     # There must be alignments present to project
     assert inst.trans.alignments
+    process_trans_if_needed(inst)
 
     # Now, iterate over the translation words, and project their
     for trans_w in inst.trans:
@@ -427,6 +436,6 @@ def combine_subword_tags(p: Phrase):
     the subword-level part-of-speech tags
     """
     for word in p:
-        tags = [subword.pos for subword in word]
-        best_tag = sorted(tags, key=lambda tag: precedence.index(tag))[0]
-        word.pos = best_tag
+        tags = [subword.pos for subword in word if subword.pos]
+        best_tags = sorted(tags, key=lambda tag: precedence.index(tag))
+        word.pos = best_tags[0] if best_tags else None

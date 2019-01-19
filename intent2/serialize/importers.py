@@ -5,7 +5,7 @@ import xigt
 import xigt.codecs.xigtxml
 from xigt.model import Igt
 from intent2.xigt_helpers import xigt_find
-from intent2.model import Word, SubWord, Phrase, TaggableMixin, Instance, Corpus
+from intent2.model import Word, GlossWord, TransWord, LangWord, SubWord, Phrase, TaggableMixin, Instance, Corpus
 from intent2.utils.strings import morph_tokenize, clean_subword_string, word_tokenize
 
 # -------------------------------------------
@@ -235,7 +235,7 @@ def parse_lang_tier(inst, id_to_object_mapping):
     if not words_tier:
         return Phrase(id='w')
 
-    return load_words(words_tier, segmentation_tier, id_to_object_mapping)
+    return load_words(words_tier, segmentation_tier, id_to_object_mapping, WordType=LangWord)
 
 def parse_gloss_tier(inst, id_to_object_mapping):
     """
@@ -267,7 +267,7 @@ def parse_gloss_tier(inst, id_to_object_mapping):
         # Now, make gloss words by grouping the subwords
         gloss_words = []
         for aligned_word in word_groups.keys():
-            w = Word(subwords=word_groups[aligned_word])
+            w = GlossWord(subwords=word_groups[aligned_word])
             w.add_alignment(aligned_word)
             gloss_words.append(w)
 
@@ -286,7 +286,7 @@ def parse_gloss_tier(inst, id_to_object_mapping):
 
     return Phrase(gloss_words, id='gw')
 
-def load_words(tier, segmentation_tier, id_to_object_mapping, segment=True):
+def load_words(tier, segmentation_tier, id_to_object_mapping, segment=True, WordType=Word):
     """
     :type tier: xigt.model.Tier
     :type segmentation_tier: xigt.model.Tier
@@ -318,13 +318,13 @@ def load_words(tier, segmentation_tier, id_to_object_mapping, segment=True):
                     sw.add_alignment(id_to_object_mapping.get(xigt_subword.alignment))
 
                 morphs.append(sw)
-            w = Word(subwords=morphs, id='{}{}'.format(tier.id, len(words)+1))
+            w = WordType(subwords=morphs, id='{}{}'.format(tier.id, len(words)+1))
 
         # Else if we want to segment the words
         elif segment:
-            w = Word(subwords=morph_tokenize(xigt_word_item.value()), id=xigt_word_item.id)
+            w = WordType(subwords=morph_tokenize(xigt_word_item.value()), id=xigt_word_item.id)
         else:
-            w = Word(xigt_word_item.value(), id=xigt_word_item.id)
+            w = WordType(xigt_word_item.value(), id=xigt_word_item.id)
 
         id_to_object_mapping[xigt_word_item.id] = w
         words.append(w)
@@ -344,7 +344,7 @@ def parse_trans_tier(inst, id_to_object_mapping):
     # If there's a translations words tier, use that.
     trans_words_tier = xigt_find(inst, id='tw')
     if trans_words_tier:
-        return load_words(trans_words_tier, None, id_to_object_mapping)
+        return load_words(trans_words_tier, None, id_to_object_mapping, WordType=TransWord)
 
     if not trans_tier:
         return Phrase(id='tw')
@@ -352,7 +352,7 @@ def parse_trans_tier(inst, id_to_object_mapping):
         # print(xigt.codecs.xigtxml.encode_igt(inst))
         sys.stderr.write('NOT IMPLEMENTED: Multiple Translations!\n')
 
-    return Phrase([Word(s, id='{}{}'.format('tw', i+1))
+    return Phrase([TransWord(s, id='{}{}'.format('tw', i+1))
                    for i, s in enumerate(word_tokenize(trans_tier[0].value()))],
                   id='tw')
 

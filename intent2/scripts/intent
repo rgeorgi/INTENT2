@@ -1,28 +1,34 @@
 #!/usr/bin/env python3
 from intent2.serialize.importers import parse_xigt_corpus
-from intent2.functions import heuristic_alignment, process_trans, project_pos
+from intent2.serialize.exporters import corpus_to_xigt, instance_to_xigt
+from intent2.functions import heuristic_alignment, process_trans, project_pos, gloss_to_morph_align
 import argparse
 from xigt.codecs.xigtxml import load
-import os
 import logging
 logging.basicConfig(level=logging.DEBUG)
+
+ROOT_LOGGER = logging.getLogger()
 
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('-i', '--input', help='inputfile', required=True)
+    p.add_argument('-o', '--output', help='Output file', required=True)
     p.add_argument('-v', '--verbose', help='Increase verbosity', action='count')
 
     args = p.parse_args()
 
+    ROOT_LOGGER.info('Loading Xigt corpus from "{}"'.format(args.input))
     xc = load(args.input, 'r')
+
+    ROOT_LOGGER.info('Parsing Xigt corpus into INTENT2 data structures.')
     corp = parse_xigt_corpus(xc)
 
-    inst1 = corp[2]
+    ROOT_LOGGER.info('Beginning INTENT2 enrichment...')
+    for inst in corp:
+        heuristic_alignment(inst)
+        project_pos(inst)
 
-    # heuristic_alignment(inst1)
-    process_trans(inst1)
-    # process_gloss(inst1)
-    heuristic_alignment(inst1)
-    project_pos(inst1)
+    with open(args.output, 'w') as out_f:
+        out_f.write(corpus_to_xigt(corp))
 

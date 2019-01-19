@@ -1,16 +1,19 @@
-import re
-
 from intent2.model import Instance, Corpus, Phrase, IdMixin, Word, SubWord
 from xigt.model import XigtCorpus, Igt, Tier, Item
 from xigt.codecs.xigtxml import dumps
 from typing import Iterable, Tuple, Union, List
+import logging
+
+EXPORT_LOG = logging.getLogger()
 
 def corpus_to_xigt(corp: Corpus):
     xc = XigtCorpus()
+    EXPORT_LOG.info('Preparing to export INTENT2 Coprus to Xigt')
     for inst in corp.instances:
         inst = instance_to_xigt(inst)
         xc.append(inst)
-    print(dumps(xc))
+    EXPORT_LOG.info('Corpus successfully converted. Returning string for writing.')
+    return dumps(xc)
 
 PHRASE_KEY = 'phrase'
 WORDS_KEY = 'words'
@@ -113,7 +116,9 @@ def tier_to_xigt(igt: Igt,
                 subword_item = Item(text=subword.string, id=subword_id)
 
                 if subword.alignments and sw_dict.get(ALN_KEY):
-                    subword_item.alignment = ','.join([sw.id for sw in subword.alignments if sw.id])
+                    subword_item.alignment = ','.join([a.id for a in subword.alignments
+                                                       if a.id
+                                                       and isinstance(a, SubWord)])
                     subword_tier.alignment = sw_dict[ALN_KEY]
 
                 if word_dict:
@@ -177,6 +182,7 @@ def instance_to_xigt(inst: Instance):
 
     :rtype:  Igt
     """
+    EXPORT_LOG.info('Serializing instance "{}" to Xigt'.format(inst.id))
     xigt_inst = Igt(id=inst.id)
     tier_to_xigt(xigt_inst, inst.lang, LANG_KEY)
     tier_to_xigt(xigt_inst, inst.gloss, GLOSS_KEY)

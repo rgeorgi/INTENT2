@@ -259,6 +259,9 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTok
     @property
     def word(self): return self
 
+class TransWord(Word): pass
+class LangWord(Word): pass
+class GlossWord(Word): pass
 
 class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMixin, IdMixin):
     """
