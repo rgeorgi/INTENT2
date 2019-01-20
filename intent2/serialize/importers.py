@@ -3,10 +3,15 @@ from collections import defaultdict
 
 import xigt
 import xigt.codecs.xigtxml
-from xigt.model import Igt
+from xigt.model import Igt, Item
 from intent2.xigt_helpers import xigt_find
 from intent2.model import Word, GlossWord, TransWord, LangWord, SubWord, Phrase, TaggableMixin, Instance, Corpus
 from intent2.utils.strings import morph_tokenize, clean_subword_string, word_tokenize
+
+from typing import Union
+
+import logging
+IMPORT_LOG = logging.getLogger()
 
 # -------------------------------------------
 # Test Cases
@@ -237,7 +242,7 @@ def parse_lang_tier(inst, id_to_object_mapping):
 
     return load_words(words_tier, segmentation_tier, id_to_object_mapping, WordType=LangWord)
 
-def parse_gloss_tier(inst, id_to_object_mapping):
+def parse_gloss_tier(inst: Igt, id_to_object_mapping):
     """
     There
 
@@ -257,6 +262,9 @@ def parse_gloss_tier(inst, id_to_object_mapping):
         word_groups = defaultdict(list)
         for gloss_item in gloss_tier:  # type: xigt.model.Item
             sw = SubWord(clean_subword_string(gloss_item.value()), id=gloss_item.id)
+            if not sw.string.strip():
+                raise Exception('Pre-segmented glosses in igt "{}" contains an empty token: "{}"'.format(inst.id, gloss_item.id))
+
             id_to_object_mapping[gloss_item.id] = sw
             gloss_subwords.append(sw)
             if gloss_item.alignment and id_to_object_mapping.get(gloss_item.alignment):
@@ -342,7 +350,7 @@ def parse_trans_tier(inst, id_to_object_mapping):
     trans_tier = xigt_find(inst, type='translations')
 
     # If there's a translations words tier, use that.
-    trans_words_tier = xigt_find(inst, id='tw')
+    trans_words_tier = xigt_find(inst, segmentation='t', type='words')
     if trans_words_tier:
         return load_words(trans_words_tier, None, id_to_object_mapping, WordType=TransWord)
 
@@ -392,6 +400,30 @@ def parse_odin(xigt_inst, tag):
 
     return Phrase()
 
+def parse_bilingual_alignments(xigt_inst: Igt,
+                               trans_p: Phrase,
+                               gloss_p: Phrase,
+                               id_to_object_mapping: dict):
+    align_tier = xigt_find(xigt_inst, type='bilingual-alignments')
+    if align_tier:
+        IMPORT_LOG.info("Alignment tier found. Importing original alignments.")
+        for align_item in align_tier: # type: Item
+            src_id = align_item.attributes.get('source')
+            tgt_id = align_item.attributes.get('target')
+
+            src_obj = id_to_object_mapping.get(src_id) # type: Union[Word,SubWord]
+            tgt_obj = id_to_object_mapping.get(tgt_id) # type: Union[Word,SubWord]
+
+            if src_obj and tgt_obj:
+                IMPORT_LOG.debug('Importing alignment of {}\u2b64{}'.format(repr(src_obj), repr(tgt_obj)))
+                src_obj.add_alignment(tgt_obj)
+            if not src_obj:
+                IMPORT_LOG.debug('Alignment import issue: ID "{}" was not found.'.format(src_obj))
+            if not tgt_obj:
+                IMPORT_LOG.debug('Alignment import issue: ID "{}" was not found.'.format(src_obj))
+
+
+
 def parse_xigt_instance(xigt_inst: Igt):
     """
     Given a Xigt instance, parse it into the INTENT2 objects
@@ -427,6 +459,8 @@ def parse_xigt_instance(xigt_inst: Igt):
     # -- 2) Add any POS tags found.
     parse_pos(xigt_inst, 'm', id_to_object_mapping)
     parse_pos(xigt_inst, 'w', id_to_object_mapping)
+
+    parse_bilingual_alignments(xigt_inst, trans_p, gloss_p, id_to_object_mapping)
 
     inst = Instance(lang_p, gloss_p, trans_p, id=xigt_inst.id)
     return inst

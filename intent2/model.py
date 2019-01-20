@@ -1,3 +1,4 @@
+import re
 import unittest
 from typing import Generator, Iterable, Iterator, Union
 
@@ -17,7 +18,12 @@ class AlignableMixin(object):
         """
         :rtype: set[Union[Word,SubWord]]
         """
-        return getattr(self, '_alignment', set([]))
+        alns = getattr(self, '_alignment', set([]))
+        # Also include alignments of subwords if this is a word
+        if isinstance(self, Word):
+            for sw in self.subwords:
+                alns |= sw.alignments
+        return alns
 
     @alignments.setter
     def alignments(self, val): setattr(self, '_alignment', val)
@@ -286,7 +292,7 @@ class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMix
 
     @property
     def parts(self):
-        return ((self.index, part) for part in self.string.split('.'))
+        return ((self.index, part) for part in re.split('[\./]', self.string))
 
     def __repr__(self): return '<sw: {}>'.format(self.string)
 

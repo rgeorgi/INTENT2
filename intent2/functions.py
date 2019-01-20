@@ -179,6 +179,7 @@ gramdict = {'1sg': ['i', 'me'],
             '3pl': ['they'],
             '3sg': ['he', 'she', 'him', 'her'],
             '3sgf': ['she', 'her'],
+            '3fsg': ['she', 'her'],
             '2sg': ['you'],
             '3sgp': ['he'],
             'poss': ['his', 'her', 'my', 'their'],
@@ -203,6 +204,11 @@ def heuristic_alignment(inst: Instance, heur_list = None):
     # We also need the translation line to have been processed for things like POS
     # tags and lemmas.
     process_trans_if_needed(inst)
+
+    ALIGN_LOG.info('Removing previous alignments, if present.')
+    for trans_w in inst.trans:
+        for alignment in list(trans_w.alignments):
+            trans_w.remove_alignment(alignment)
 
     # We don't need to store the sub-sub-word information that we will use to perform
     # alignment, but we want to get things like the lemmas and vector representations
@@ -258,7 +264,7 @@ def heuristic_alignment(inst: Instance, heur_list = None):
         for trans_w in inst.trans:
             if lang_w.string.lower() == trans_w.string.lower():
                 existing_alignments.add((trans_w.index, lang_w.index))
-                existing_alignments = handle_multiple_alignments(existing_alignments)
+                existing_alignments = set(handle_multiple_alignments(existing_alignments))
 
     # The "heur_list" is the list defining which, and the
     # order of which heuristics to use for alignment.
@@ -297,16 +303,33 @@ def get_alignment_glosses(alignments: List[Tuple[int, float]]):
     return {gloss_index for word_index, gloss_index in alignments}
 
 def remove_conflicting_alignments(existing_alignments: List[Tuple[int, float]],
-                                  new_alignments: List[Tuple[int, float]]):
+                                  new_alignments: List[Tuple[int, float]],
+                                  allow_multiple_alignments=True):
     """
     Remove any newly proposed alignments that overlap with already
     assigned alignments
     """
     aligned_words = get_alignment_words(existing_alignments)
     aligned_glosses = get_alignment_glosses(existing_alignments)
+
+    def num_alignments(src_index, type='word'):
+        index = 0 if type=='word' else 1
+        return len([aln for aln in new_alignments if aln[index] == src_index])
+
+    # -------------------------------------------
+    # There are two cases in which we want to align two tokens:
+    #   1) Neither token has an alignment.
+    #   2) One token is already aligned, but a newly proposed candidate for
+    #      alignment has only one option AND we want to allow multiple
+    #      alignments to be proposed with this heuristic.
+
     return [(word_index, gloss_index) for word_index, gloss_index in new_alignments
-            if word_index not in aligned_words
-            and gloss_index not in aligned_glosses]
+            if ((word_index not in aligned_words and gloss_index not in aligned_glosses)
+                or (allow_multiple_alignments and
+                    ((word_index not in aligned_words and num_alignments(word_index) == 1)
+                     or (gloss_index not in aligned_glosses and num_alignments(gloss_index, 'gloss') == 1)
+                     ))
+                )]
 
 
 def alignments_to_dict(alignments: List[Tuple[int, float]], key_is_gloss=True):
@@ -362,6 +385,28 @@ def handle_multiple_alignments(alignments: List[Tuple[int, float]]):
     return sorted(final_alignments)
 
 
+from nltk.tree import ParentedTree
+class DependencyTree(ParentedTree):
+
+    def __init__(self, node, children=None, label=None):
+        """
+        :param node: The word
+        :param children: children trees
+        :type children: List[Union[DependencyTree,None]]
+        :param label:
+        """
+        self.type = label # The relation of this node to its parent
+        super().__init__(node, children)
+
+
+
+def extract_ds(p: Phrase):
+    """
+    Given a phrase that's been assigned a dependency analysis,
+    extract it as a tree that can be manipulated and traversed.
+    """
+    dep_links = p.dependencies
+    from nltk.tree import ParentedTree
 
 def project_dependencies(inst: Instance):
     pass

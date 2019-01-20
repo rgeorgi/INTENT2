@@ -10,8 +10,9 @@ def corpus_to_xigt(corp: Corpus):
     xc = XigtCorpus()
     EXPORT_LOG.info('Preparing to export INTENT2 Coprus to Xigt')
     for inst in corp.instances:
-        inst = instance_to_xigt(inst)
-        xc.append(inst)
+        xigt_inst = instance_to_xigt(inst)
+        EXPORT_LOG.debug(inst)
+        xc.append(xigt_inst)
     EXPORT_LOG.info('Corpus successfully converted. Returning string for writing.')
     return dumps(xc)
 
