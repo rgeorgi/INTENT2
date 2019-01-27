@@ -3,7 +3,7 @@ A series of helpful tools to visualize different
 aspects for printing and debugging.
 """
 
-from intent2.model import Instance, Word, SubWord, Phrase
+from intent2.model import Instance, Word, SubWord, Phrase, TransWord
 from typing import Union
 from termcolor import colored
 
@@ -39,14 +39,14 @@ def visualize_alignment(inst: Instance):
     ret_str = ''
     lang_widths = [len(lw.hyphenated) for lw in inst.lang]
     gloss_widths = [len(gw.hyphenated) for gw in inst.gloss]
-    alignments = [sorted([aln.index for aln in gloss_w.alignments]) for gloss_w in inst.gloss]
+    alignments = [sorted([aligned_obj.index for aligned_obj in gloss_w.alignments if isinstance(aligned_obj, TransWord)]) for gloss_w in inst.gloss]
     aln_strings = ['({})'.format(','.join([str(i) for i in aln_iter])) if aln_iter else '' for aln_iter in alignments]
     aln_widths = [len(aln) for aln in aln_strings]
 
     col_widths = find_lengths(lang_widths, gloss_widths, aln_widths)
 
     for i in range(len(col_widths)):
-        ret_str += format_token(col_widths[i], '[{}]'.format(i), aln_type='<', color='green')
+        ret_str += format_token(col_widths[i], '[{}]'.format(i), aln_type='<', color='blue')
     ret_str += '\n'
 
     for i, lang_w in enumerate(inst.lang):
@@ -59,7 +59,7 @@ def visualize_alignment(inst: Instance):
 
     # Now, print alignments
     for i, aln_tup in enumerate(aln_strings):
-        ret_str += format_token(col_widths[i], aln_tup, aln_type='<', color='blue')
+        ret_str += format_token(col_widths[i], aln_tup, aln_type='^', color='green')
     ret_str += '\n'
 
     trans_word_widths = [len(trans_w.hyphenated) for trans_w in inst.trans]

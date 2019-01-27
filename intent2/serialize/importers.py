@@ -207,21 +207,11 @@ test_case_one = """
   </xigt-corpus>"""
 
 
-
-
-def align_tiers(inst, align_to_id):
-    """
-    :type tier_1: xigt.model.Tier
-    """
-    align_to_tier = xigt_find(inst, id=align_to_id)  # type: xigt.model.Tier
-    align_from_tier = xigt_find(inst, alignment=align_to_id)  #type: xigt.model.Tier
-
-    for align_from_item in align_from_tier: # type: xigt.model.Item
-        print(align_from_item.id, align_from_item.alignment)
-
 # -------------------------------------------
 # Read in Language, Gloss, Translation
 # -------------------------------------------
+
+from .consts import *
 
 def parse_lang_tier(inst, id_to_object_mapping):
     """
@@ -234,11 +224,11 @@ def parse_lang_tier(inst, id_to_object_mapping):
     :type inst: xigt.model.Igt
     :type words_id: str
     """
-    words_tier = xigt_find(inst, id='w')
-    segmentation_tier = xigt_find(inst, segmentation='w') or []
+    words_tier = xigt_find(inst, id=LANG_WORD_ID)
+    segmentation_tier = xigt_find(inst, segmentation=LANG_WORD_ID) or []
 
     if not words_tier:
-        return Phrase(id='w')
+        return Phrase(id=LANG_WORD_ID)
 
     return load_words(words_tier, segmentation_tier, id_to_object_mapping, WordType=LangWord)
 
@@ -285,7 +275,7 @@ def parse_gloss_tier(inst: Igt, id_to_object_mapping):
         gloss_words = []
         for gloss_word_item in gloss_words_tier: # type: xigt.model.Item
             subwords = [SubWord(clean_subword_string(g)) for g in morph_tokenize(gloss_word_item.value())]
-            gw = Word(subwords=subwords)
+            gw = GlossWord(subwords=subwords)
             id_to_object_mapping[gloss_word_item.id] = gw
             gloss_words.append(gw)
 
@@ -384,7 +374,7 @@ def parse_xigt_corpus(xigt_corpus):
     from intent2.model import Corpus
     return Corpus([parse_xigt_instance(xigt_inst) for xigt_inst in xigt_corpus])
 
-def parse_odin(xigt_inst, tag):
+def parse_odin(xigt_inst, tag, WordType=Word):
     """
     Look for the normalized ODIN tier of the given
     tag type, and convert it to words/subwords objects.
@@ -395,15 +385,21 @@ def parse_odin(xigt_inst, tag):
     if normalized_tier:
         normalized_line = xigt_find(normalized_tier, tag=tag.upper())
         if normalized_line and normalized_line.value(): # type: xigt.model.Item
-            words = [Word(subwords=morph_tokenize(w)) for w in word_tokenize(normalized_line.value())]
+            words = [WordType(subwords=morph_tokenize(w)) for w in word_tokenize(normalized_line.value())]
             return Phrase(words)
 
     return Phrase()
 
 def parse_bilingual_alignments(xigt_inst: Igt,
-                               trans_p: Phrase,
-                               gloss_p: Phrase,
                                id_to_object_mapping: dict):
+    """
+    Retrieve any bilingual-alignment tier already existing in the instance,
+    and add those alignments to our data model.
+
+    :param xigt_inst: Source IGT Instance
+    :param id_to_object_mapping: Mapping containing id strings that are seen
+                                 in the xigt data, and the INTENT2 objects they map to.
+    """
     align_tier = xigt_find(xigt_inst, type='bilingual-alignments')
     if align_tier:
         IMPORT_LOG.info("Alignment tier found. Importing original alignments.")
@@ -440,27 +436,34 @@ def parse_xigt_instance(xigt_inst: Igt):
     # Keep a mapping of the ID strings and their associated mappings
     id_to_object_mapping = {}
 
-    def process_tier_or_odin(func, odin_tag):
-        phrase = func(xigt_inst, id_to_object_mapping)
-        if not phrase:
-            return parse_odin(xigt_inst, odin_tag)
+    def process_tier_or_odin(func, odin_tag, WordType):
+        """
+        Attempt to parse
+        """
+        try:
+            phrase = func(xigt_inst, id_to_object_mapping)
+            if not phrase:
+                return parse_odin(xigt_inst, odin_tag, WordType)
+        except AssertionError as ae:
+            IMPORT_LOG.error("Error parsing instance {}: {}".format(xigt_inst.id, ae))
+            phrase = None
         return phrase
 
 
     # -- 1a) Create the language phrase
-    lang_p = process_tier_or_odin(parse_lang_tier, 'L')
+    lang_p = process_tier_or_odin(parse_lang_tier, 'L', LangWord)
 
     # -- 1b) Create the gloss phrase
-    gloss_p = process_tier_or_odin(parse_gloss_tier, 'G')
+    gloss_p = process_tier_or_odin(parse_gloss_tier, 'G', GlossWord)
 
     # -- 1c) Create the translation phrase
-    trans_p = process_tier_or_odin(parse_trans_tier, 'T')
+    trans_p = process_tier_or_odin(parse_trans_tier, 'T', TransWord)
 
     # -- 2) Add any POS tags found.
     parse_pos(xigt_inst, 'm', id_to_object_mapping)
     parse_pos(xigt_inst, 'w', id_to_object_mapping)
 
-    parse_bilingual_alignments(xigt_inst, trans_p, gloss_p, id_to_object_mapping)
+    parse_bilingual_alignments(xigt_inst, id_to_object_mapping)
 
     inst = Instance(lang_p, gloss_p, trans_p, id=xigt_inst.id)
     return inst
