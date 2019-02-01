@@ -108,19 +108,32 @@ class DependencyMixin(object):
     @property
     def dependency_links(self): return self._dependency_links
 
+    @dependency_links.setter
+    def dependency_links(self, val):
+        self._dependency_links = val
 
-    def add_dependent(self, dependent, type: str=None):
-        add_dependency_link(dependent, self, type=type)
+    def add_dependent(self, dependent, link_type: str = None):
+        add_dependency_link(dependent, self, link_type=link_type)
 
-    def add_head(self, head, type: str=None):
-        add_dependency_link(self, head, type=type)
+    def add_head(self, head, link_type: str = None):
+        add_dependency_link(self, head, link_type=link_type)
 
-def add_dependency_link(child, parent, type=None):
+    def find_root(self):
+        if not self.dependencies:
+            return self
+        else:
+            return next(iter(self.dependencies)).parent.find_root()
+
+
+def add_dependency_link(child: DependencyMixin,
+                        parent: DependencyMixin,
+                        link_type: str = None):
     assert isinstance(child, DependencyMixin)
-    assert isinstance(parent, DependencyMixin)
-    link = DependencyLink(child, parent, type=type)
-    child._dependency_links |= {link}
-    parent._dependency_links |= {link}
+    assert isinstance(parent, DependencyMixin) or (parent is None)
+    link = DependencyLink(child, parent, link_type=link_type)
+    child.dependency_links |= {link}
+    if parent:
+        parent.dependency_links |= {link}
 
 class StringMixin(object):
     """
@@ -176,10 +189,10 @@ class DependencyLink(object):
     def __init__(self,
                  child: DependencyMixin,
                  parent: DependencyMixin,
-                 type: str=None):
+                 link_type: str=None):
         self.child = child
         self.parent = parent
-        self.type = type
+        self.type = link_type
 
     def __repr__(self):
         return '<dep {} --> {}>'.format(self.child, self.parent)
@@ -356,7 +369,7 @@ class Phrase(list, IdMixin):
         return '[p: {}]'.format(', '.join([repr(s) for s in self]))
 
     @property
-    def dependencies(self):
+    def dependency_links(self):
         """
         Check all of the dependency relationships of the
         words and return a dependency parse.
@@ -365,7 +378,7 @@ class Phrase(list, IdMixin):
         """
         all_links = set([])
         for word in self:
-            all_links |= word._dependency_links
+            all_links |= word.dependency_links
         return all_links
 
     @property
@@ -468,8 +481,8 @@ class DependencyTests(unittest.TestCase):
 
     def test_dependencies(self):
         self.wordA.add_dependent(self.wordB)
-        self.assertTrue(len(self.wordA.dependencies) == 1)
-        dep = next(iter(self.wordA.dependencies))
+        self.assertTrue(len(self.wordA.dependency_links) == 1)
+        dep = next(iter(self.wordA.dependency_links))
 
         # Make sure
         self.assertTrue(dep.child == self.wordB)
@@ -479,10 +492,10 @@ class DependencyTests(unittest.TestCase):
 
         # Add one more
         self.wordA.add_dependent(self.wordC)
-        self.assertTrue(len(self.wordA.dependencies) == 2)
+        self.assertTrue(len(self.wordA.dependency_links) == 2)
 
-        depA = self.wordA.dependencies
-        depC = self.wordC.dependencies
+        depA = self.wordA.dependency_links
+        depC = self.wordC.dependency_links
 
         self.assertTrue(len(depA & depC) == 1)
 

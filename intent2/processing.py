@@ -62,10 +62,11 @@ def process_trans(inst: Instance, tag=True, parse=True):
         if parse:
             if spacy_word.head.i != i:
                 trans_word.add_head(inst.trans[spacy_word.head.i],
-                                    type=spacy_word.dep_)
+                                    link_type=spacy_word.dep_)
             # If spacy says that a word is its own head,
             # it is the root.
             else:
+                trans_word.add_head(None, link_type='root')
                 inst.trans.root = trans_word
 
         # Add vector

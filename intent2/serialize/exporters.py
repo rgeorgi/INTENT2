@@ -140,7 +140,7 @@ def xigt_add_dependencies(xigt_inst: Igt, phrase: Phrase):
     render it into
     """
     dep_tier = Tier(type='dependencies', id='{}ds'.format(phrase.id))
-    for i, dep_link in enumerate(phrase.dependencies):
+    for i, dep_link in enumerate(phrase.dependency_links):
         dep_item = Item(id='{}-dep{}'.format(phrase.id, i+1),
                         attributes={'dep':dep_link.child.id})
         if dep_link.parent:
