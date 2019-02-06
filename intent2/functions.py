@@ -7,9 +7,9 @@ namely:
     * Performing alignment
 
 """
-from intent2.model import Instance, Word, SubWord, Phrase
+from intent2.model import Instance, Word, SubWord, Phrase, DependencyLink
 from intent2.processing import process_trans_if_needed
-from typing import Iterable, Generator, List, Tuple
+from typing import Iterable, Generator, List, Tuple, Iterator
 
 from spacy.tokens import Doc, Span, Token
 import logging
@@ -19,90 +19,17 @@ ENRICH_LOG = logging.getLogger('enrich')
 # -------------------------------------------
 # Dependency Parsing
 # -------------------------------------------
-from nltk.tree import ParentedTree
-class DependencyTree(ParentedTree):
-
-    def __init__(self, node, children=None, parent_dep_rel=None):
-        """
-        :param node: The word
-        :param children: children trees
-        :type children: List[Union[DependencyTree,None]]
-        :param parent_dep_rel: Label for dependency relation with parent
-        """
-        children = [] if children is None else children
-        self.parent_dep_rel = parent_dep_rel # The relation of this node to its parent
-        super().__init__(node, children=children)
-
-    def pretty_print(self):
-        """
-        NLTK's pretty_print() wants to do a bunch of
-        processing that assumes the node labels are strings.
-        :return:
-        """
-        strcopy = self.copy(tostr=True)
-        pt = ParentedTree.convert(strcopy)
-        return pt.pretty_print()
-
-    def label(self) -> Word: return super().label()
-
-    def delete(self, promote=True):
-        """
-        Delete this node, and promote its children
-        to take its place.
-        """
-        if not self.parent():
-            raise Exception('Deletion of root unsupported.')
-        my_index = self.parent().index(self)
-
-        # Now, insert all of the children into
-        # the parent just after the current node.
-        if promote:
-            for child_i, child in enumerate(self):
-                child._parent = None
-                self.parent().insert(my_index + child_i + 1, child)
-
-        # Finally, delete the current node from the parent.
-        del self.parent()[my_index]
-
-    def __iter__(self):
-        """:rtype: Iterator[DependencyTree]"""
-        return super().__iter__()
-
-    def copy(self, tostr=False):
-        """
-        Perform a deep copy of the tree, optionally
-        replacing the nodes with string representations,
-        since NLTK freaks out if they are not strings.
-
-        :param tostr:
-        :rtype: DependencyTree
-        """
-        new_children = []
-        for old_child in self:
-            if isinstance(old_child, DependencyTree):
-                new_child = old_child.copy(tostr=tostr)
-            else:
-                new_child = old_child
-            new_children.append(new_child)
-
-        if isinstance(self.label(), Word) and tostr:
-            label = self.label().hyphenated
-        else:
-            label = self.label()
-
-        return DependencyTree(label,
-                              children=new_children,
-                              parent_dep_rel=self.parent_dep_rel)
-
-def build_dt(word: Word, link_type: str = None):
+class DependencySet(set[DependencyLink]):
     """
-    Recursively build a dt given a node
-    and its children.
+    Rather than representing a dependency structure
+    as a tree, just keep it as a set of links between
+    items.
     """
-    children = [build_dt(link.child, link.type)
-                for link in sorted(word.dependents,
-                                   key=lambda link: link.child.index)]
-    return DependencyTree(word, children, link_type)
+    def __new__(cls, iterable: Iterable=None, root: DependencyLink=None):
+        if iterable is None:
+            iterable = []
+        ds = cls(iterable)
+
 
 def extract_ds(p: Phrase):
     """
@@ -132,12 +59,47 @@ def extract_ds(p: Phrase):
         return DependencyTree('_ROOT_',
                               [build_dt(roots[0], 'root')],
                               '_ROOT_')
-    """
-    dep_links = p.dependencies
-    from nltk.tree import ParentedTree
 
-def project_dependencies(inst: Instance):
-    pass
+def project_ds(inst: Instance):
+    """
+    1. Our DS projection algorithm is similar to the projection algorithms
+        described in (Hwa et al. 2002) and (Quirk et al. 2005).
+
+        It has four steps:
+
+            1. Copy the English DS. and remove all the unaligned English words
+            from the DS.
+
+            2. We replace each English word in the DS with the corresponding
+            source words. If an English word x aligns to several source words,
+            we will make several copies of the node for x, one copy for each
+            such source word. The copies will all be siblings in the DS.
+            If a source word aligns to multiple English words, after Step 2
+            the source word will have several copies in the resulting DS.
+
+            3. In the third step, we keep only the copy that is closest
+            to the root and remove all the other copies.
+
+            4. In Step 4, we attach unaligned source words to the DS
+            using the heuristics described in (Quirk et al. 2005).
+    """
+    # -- 0) Start by extracting the dependency
+    #      tree from the translation.
+    process_trans_if_needed(inst)
+    t_ds = extract_ds(inst.trans)
+
+    # -- 1) Copy English DS and remove unaligned words.
+    proj_ds = t_ds.copy()
+
+    proj_ds.pretty_print()
+
+    nodes = list(proj_ds.subtrees())
+    for node in nodes:
+        if not node._label.alignments:
+            node.delete()
+
+    proj_ds.pretty_print()
+
 
 
 # -------------------------------------------

@@ -184,6 +184,26 @@ class DependencyLink(object):
     def __repr__(self):
         return '<dep {} --> {}>'.format(self.child, self.parent)
 
+    def promote(self):
+        """
+        Return the list of links that would result from
+        deleting the parent of this link and promoting
+        its children.
+
+        Note that this set makes no assumption about
+        multiple parents. This set will likely be size 1,
+        but if multiple parents exist it might be longer.
+
+        :rtype: set[DependencyLink]
+        """
+        new_links = set([])
+        for parent_link in self.parent.dependencies:
+            new_link = DependencyLink(child=self.child,
+                                      parent=parent_link.parent,
+                                      type=self.type)
+            new_links.add(new_link)
+        return new_links
+
 # -------------------------------------------
 # Non-Mixin Classes
 # -------------------------------------------
