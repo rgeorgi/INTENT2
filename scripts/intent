@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
+import sys
+
+from intent2.functions import project_pos, project_dependencies
 from intent2.serialize.importers import parse_xigt_corpus
 from intent2.serialize.exporters import corpus_to_xigt, instance_to_xigt
-from intent2.functions import heuristic_alignment, project_pos, project_dependencies
+from intent2.alignment import heuristic_alignment
 import argparse
+
+from intent2.utils.visualization import visualize_alignment
 from xigt.codecs.xigtxml import load
 import logging
 logging.basicConfig(level=logging.DEBUG)
+
+import sys
 
 ROOT_LOGGER = logging.getLogger()
 
@@ -38,6 +45,7 @@ if __name__ == '__main__':
         ROOT_LOGGER.info("DS Projection disabled")
 
     for inst in corp:
+
         if not args.no_align:
             heuristic_alignment(inst)
 
@@ -46,8 +54,8 @@ if __name__ == '__main__':
         if inst.trans.alignments:
             if not args.no_posproject:
                 project_pos(inst)
-            if not args.no_dsproject:
-                project_dependencies(inst)
+            # if not args.no_dsproject:
+            #     project_ds(inst)
 
     with open(args.output, 'w') as out_f:
         out_f.write(corpus_to_xigt(corp))
