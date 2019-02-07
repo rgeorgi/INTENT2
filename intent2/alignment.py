@@ -117,6 +117,8 @@ gramdict = {'1sg': ['i', 'me'],
             'neg': ["n't", 'not'],
             '2pl': ['you']}
 
+class AlignException(Exception): pass
+
 def heuristic_alignment(inst: Instance, heur_list = None):
     """
     Implement the alignment between words
@@ -126,7 +128,8 @@ def heuristic_alignment(inst: Instance, heur_list = None):
     ALIGN_LOG.info('Attempting heuristic alignment for instance "{}"'.format(inst.id))
 
     # To do heuristic alignment, we need minimally a gloss and translation line.
-    assert inst.gloss and inst.trans and inst.lang
+    if not (inst.gloss and inst.trans and inst.lang):
+        raise AlignException('Instance "{}" does not contain L,G,T lines.'.format(inst.id))
 
     # We also need the translation line to have been processed for things like POS
     # tags and lemmas.

@@ -206,6 +206,8 @@ test_case_one = """
   </igt>
   </xigt-corpus>"""
 
+class ImportException(Exception): pass
+
 
 # -------------------------------------------
 # Read in Language, Gloss, Translation
@@ -253,7 +255,7 @@ def parse_gloss_tier(inst: Igt, id_to_object_mapping):
         for gloss_item in gloss_tier:  # type: xigt.model.Item
             sw = SubWord(clean_subword_string(gloss_item.value()), id=gloss_item.id)
             if not sw.string.strip():
-                raise Exception('Pre-segmented glosses in igt "{}" contains an empty token: "{}"'.format(inst.id, gloss_item.id))
+                raise ImportException('Pre-segmented glosses in igt "{}" contains an empty token: "{}"'.format(inst.id, gloss_item.id))
 
             id_to_object_mapping[gloss_item.id] = sw
             gloss_subwords.append(sw)
@@ -342,17 +344,24 @@ def parse_trans_tier(inst, id_to_object_mapping):
     # If there's a translations words tier, use that.
     trans_words_tier = xigt_find(inst, segmentation='t', type='words')
     if trans_words_tier:
+        IMPORT_LOG.debug("trans-words tier found.")
         return load_words(trans_words_tier, None, id_to_object_mapping, WordType=TransWord)
 
     if not trans_tier:
-        return Phrase(id='tw')
+        return None
     elif len(trans_tier) > 1:
-        # print(xigt.codecs.xigtxml.encode_igt(inst))
-        sys.stderr.write('NOT IMPLEMENTED: Multiple Translations!\n')
+        raise ImportException('NOT IMPLEMENTED: Multiple Translations!')
+    elif trans_tier[0].value() is None:
+        return None
 
-    return Phrase([TransWord(s, id='{}{}'.format('tw', i+1))
-                   for i, s in enumerate(word_tokenize(trans_tier[0].value()))],
-                  id='tw')
+    # Otherwise, tokenize the words on the translation tier and create a
+    # new phrase.
+    trans_phrase = Phrase(id='tw')
+    trans_tier_str = trans_tier[0].value()
+    IMPORT_LOG.debug('No trans-word tier found for instance "{}", tokenizing trans phrase: "{}"'.format(inst.id, trans_tier_str))
+    for i, word in enumerate(word_tokenize(trans_tier_str)):
+        trans_phrase.append(TransWord(word, id='{}{}'.format('tw', i+1)))
+    return trans_phrase
 
 def parse_pos(inst, pos_id, id_to_object_mapping):
     pos_tag_tier = xigt_find(inst, alignment=pos_id, type='pos') or []
@@ -366,13 +375,24 @@ def parse_pos(inst, pos_id, id_to_object_mapping):
 # -------------------------------------------
 # Now, parse into INTENT2 model
 # -------------------------------------------
-def parse_xigt_corpus(xigt_corpus):
+def parse_xigt_corpus(xigt_corpus, ignore_import_errors=True):
     """
     :type xigt_corpus: xigt.model.XigtCorpus
     :rtype: Corpus
     """
     from intent2.model import Corpus
-    return Corpus([parse_xigt_instance(xigt_inst) for xigt_inst in xigt_corpus])
+
+    instances = []
+    for xigt_inst in xigt_corpus:
+        try:
+            intent_inst = parse_xigt_instance(xigt_inst)
+            instances.append(intent_inst)
+        except ImportException as ie:
+            IMPORT_LOG.error('There was an error importing instance "{}": {}'.format(xigt_inst.id, ie))
+            if not ignore_import_errors:
+                raise ie
+
+    return Corpus(instances)
 
 def parse_odin(xigt_inst, tag, WordType=Word):
     """

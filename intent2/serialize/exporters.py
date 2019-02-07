@@ -28,9 +28,14 @@ def tier_to_xigt(igt: Igt,
     """
     Given
     """
-    # -- 1) Create phrase tier if expected.
+    # -- 0) Do nothing if the phrase does not exist.
+    if phrase is None:
+        return
+
+    # -- 1) Create phrase tier if expected, and if
+    #       there is a phrase to serialize.
     phrase_dict = get_xigt_str([phrase_type, PHRASE_KEY])
-    if phrase_dict:
+    if phrase and phrase_dict:
         phrase_tier = Tier(type=phrase_dict[TYPE_KEY],
                            id=phrase_dict[ID_KEY],
                            items=[Item(id=phrase_dict[ID_KEY]+'1',
@@ -43,7 +48,7 @@ def tier_to_xigt(igt: Igt,
     if word_dict:
         word_tier = Tier(type=word_dict[TYPE_KEY],
                          id=word_dict[ID_KEY],
-                         segmentation=word_dict[SEG_KEY])
+                         segmentation=word_dict.get(SEG_KEY))
         word_pos_tier = Tier(type='pos',
                              alignment=word_dict[ID_KEY],
                              id='{}pos'.format(word_dict[ID_KEY]))
@@ -64,6 +69,10 @@ def tier_to_xigt(igt: Igt,
     def add_to_pos_tier(token: Union[Word, SubWord],
                         token_id: str,
                         tier: Tier):
+        """
+        Given a token (a word or subword),
+        add its
+        """
         if token.pos:
             token_pos_item = Item(text=token.pos,
                                   id='{}pos'.format(token_id),
