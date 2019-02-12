@@ -131,6 +131,10 @@ def heuristic_alignment(inst: Instance, heur_list = None):
     if not (inst.gloss and inst.trans and inst.lang):
         raise AlignException('Instance "{}" does not contain L,G,T lines.'.format(inst.id))
 
+    # We also need the
+    if not (len(inst.lang) == len(inst.gloss)):
+        raise AlignException('Instance "{}" has different number of L, G tokens.'.format(inst.id))
+
     # We also need the translation line to have been processed for things like POS
     # tags and lemmas.
     process_trans_if_needed(inst)
@@ -192,6 +196,7 @@ def heuristic_alignment(inst: Instance, heur_list = None):
     existing_alignments = set([])
     for lang_w in inst.lang:
         for trans_w in inst.trans:
+            assert trans_w.index is not None
             if lang_w.string.lower() == trans_w.string.lower():
                 existing_alignments.add((trans_w.index, lang_w.index))
                 existing_alignments = set(handle_multiple_alignments(existing_alignments))
@@ -263,7 +268,7 @@ def remove_conflicting_alignments(existing_alignments: List[Tuple[int, float]],
                 word_index, gloss_index))
             align=True
         elif gloss_index not in aligned_glosses and num_alignments(gloss_index) == 1:
-            ALIGN_LOG.debug('Alignment exists for word {0}, but gloss {1} has no other candidates. Aligning ({0},{1])'.format(
+            ALIGN_LOG.debug('Alignment exists for word {0}, but gloss {1} has no other candidates. Aligning ({0},{1})'.format(
                 word_index, gloss_index))
             align=True
         if align:

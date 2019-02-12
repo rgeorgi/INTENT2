@@ -16,8 +16,12 @@ def corpus_to_xigt(corp: Corpus):
     EXPORT_LOG.info('Preparing to export INTENT2 Coprus to Xigt')
     for inst in corp.instances:
         xigt_inst = instance_to_xigt(inst)
-        EXPORT_LOG.debug(inst)
-        xc.append(xigt_inst)
+        try:
+            dumps(XigtCorpus(igts=[xigt_inst]))
+            xc.append(xigt_inst)
+        except TypeError as te:
+            EXPORT_LOG.error('Error in serializing instance "{}": {}'.format(inst.id, te))
+            raise te
     EXPORT_LOG.info('Corpus successfully converted. Returning string for writing.')
     return dumps(xc)
 
@@ -106,7 +110,7 @@ def tier_to_xigt(igt: Igt,
                     subword_tier.alignment = sw_dict[ALN_KEY]
 
                 if word_dict:
-                    subword_item.segmentation=word_id
+                    subword_item.segmentation = word_id
                 subword_tier.append(subword_item)
 
                 add_to_pos_tier(subword, subword_id, subword_pos_tier)
@@ -130,15 +134,14 @@ def xigt_add_bilingual_alignment(xigt_inst: Igt, trans: Phrase):
     """
 
     bilingual_aln_tier = Tier(id='a', type='bilingual-alignments',
-                              attributes={'source':'tw', 'target':'g'})
+                              attributes={'source': 'tw', 'target': 'g'})
     aln_num = 0
     for t_w in trans:
         for aligned_gloss in t_w.alignments:
 
-
             aln_item = Item(id='a{}'.format(aln_num+1),
-                            attributes={'source':t_w.id,
-                                        'target':aligned_gloss.id})
+                            attributes={'source': t_w.id,
+                                        'target': aligned_gloss.id})
             bilingual_aln_tier.append(aln_item)
             aln_num += 1
     xigt_inst.append(bilingual_aln_tier)
@@ -166,7 +169,7 @@ def instance_to_xigt(inst: Instance):
 
     :rtype:  Igt
     """
-    EXPORT_LOG.info('Serializing instance "{}" to Xigt'.format(inst.id))
+    EXPORT_LOG.debug('Serializing instance "{}" to Xigt'.format(inst.id))
     xigt_inst = Igt(id=inst.id)
     tier_to_xigt(xigt_inst, inst.lang, LANG_KEY)
     tier_to_xigt(xigt_inst, inst.gloss, GLOSS_KEY)

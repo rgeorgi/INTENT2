@@ -6,7 +6,7 @@ import xigt.codecs.xigtxml
 from xigt.model import Igt, Item
 from intent2.xigt_helpers import xigt_find
 from intent2.model import Word, GlossWord, TransWord, LangWord, SubWord, Phrase, TaggableMixin, Instance, Corpus
-from intent2.utils.strings import morph_tokenize, clean_subword_string, word_tokenize
+from intent2.utils.strings import morph_tokenize, subword_str_to_subword, word_tokenize, word_str_to_subwords
 
 from typing import Union
 
@@ -207,6 +207,7 @@ test_case_one = """
   </xigt-corpus>"""
 
 class ImportException(Exception): pass
+class SegmentationTierException(ImportException): pass
 
 
 # -------------------------------------------
@@ -226,110 +227,219 @@ def parse_lang_tier(inst, id_to_object_mapping):
     :type inst: xigt.model.Igt
     :type words_id: str
     """
-    words_tier = xigt_find(inst, id=LANG_WORD_ID)
-    segmentation_tier = xigt_find(inst, segmentation=LANG_WORD_ID) or []
+    lang_tier = xigt_find(inst, id=LANG_WORD_ID)
+    morph_tier = xigt_find(inst, segmentation=LANG_WORD_ID)
 
-    if not words_tier:
-        return Phrase(id=LANG_WORD_ID)
+    if not lang_tier:
+        return Phrase(id_=LANG_WORD_ID)
 
-    return load_words(words_tier, segmentation_tier, id_to_object_mapping, WordType=LangWord)
+    return load_words(id_to_object_mapping,
+                      words_tier=lang_tier,
+                      segmentation_tier=morph_tier,
+                      WordType=LangWord)
+
 
 def parse_gloss_tier(inst: Igt, id_to_object_mapping):
     """
-    There
+    The load_words tier assumes that
 
     :type inst: xigt.model.Igt
     """
-
     # Look for either a gloss tier (standard)
     # Or a gloss words tier (nonstandard)
     gloss_tier = xigt_find(inst, id='g')
     gloss_words_tier = xigt_find(inst, id='gw')
+    lang_words_tier = xigt_find(inst, id='w')
 
-    # -- 1) If a gloss tier is found, use this
-    #       to create word-level gloss items, since
-    #       the segmentation is likely higher quality
-    if gloss_tier:
-        gloss_subwords = []
-        word_groups = defaultdict(list)
-        for gloss_item in gloss_tier:  # type: xigt.model.Item
-            sw = SubWord(clean_subword_string(gloss_item.value()), id=gloss_item.id)
-            if not sw.string.strip():
-                raise ImportException('Pre-segmented glosses in igt "{}" contains an empty token: "{}"'.format(inst.id, gloss_item.id))
+    gloss_p = load_words(id_to_object_mapping,
+                         words_tier=gloss_words_tier,
+                         segmentation_tier=gloss_tier,
+                         alignment_tier=lang_words_tier,
+                         WordType=GlossWord)
 
-            id_to_object_mapping[gloss_item.id] = sw
-            gloss_subwords.append(sw)
-            if gloss_item.alignment and id_to_object_mapping.get(gloss_item.alignment):
-                aligned_item = id_to_object_mapping[gloss_item.alignment]
-                sw.add_alignment(aligned_item)
-                word_groups[aligned_item.word].append(sw)
+    gloss_p._id = 'gw'
 
-        # Now, make gloss words by grouping the subwords
-        gloss_words = []
-        for aligned_word in word_groups.keys():
-            w = GlossWord(subwords=word_groups[aligned_word])
-            w.add_alignment(aligned_word)
-            gloss_words.append(w)
+    return gloss_p
 
-    # -- 2) Otherwise, if a gloss_words tier was found,
-    #       attempt to tokenize the morphemes.
-    elif gloss_words_tier:
-        gloss_words = []
-        for gloss_word_item in gloss_words_tier: # type: xigt.model.Item
-            subwords = [SubWord(clean_subword_string(g)) for g in morph_tokenize(gloss_word_item.value())]
-            gw = GlossWord(subwords=subwords)
-            id_to_object_mapping[gloss_word_item.id] = gw
-            gloss_words.append(gw)
-
-    else:
-        return Phrase(id='gw')
-
-    return Phrase(gloss_words, id='gw')
-
-def load_words(tier, segmentation_tier, id_to_object_mapping, segment=True, WordType=Word):
+def item_id(base_str, n):
     """
-    :type tier: xigt.model.Tier
-    :type segmentation_tier: xigt.model.Tier
-    :type id_to_object_mapping: dict
+    Adds modularity to creating item IDs
+    :param base_str:
+    :param n:
+    :return:
+    """
+    return '{}{}'.format(base_str, n)
+
+def create_phrase_from_words_tier(tier: xigt.model.Tier,
+                                  do_segmentation: bool=True,
+                                  WordType=Word):
+    """
+    Given a tier without pre-provided segmentation, return a phrase
+
+    :param tier:
+    :param id_to_object_mapping:
+    :param WordType:
+    :return:
+    """
+    def word_func(xigt_word_item):
+        if do_segmentation:
+            w = WordType(subwords=word_str_to_subwords(xigt_word_item.value()),
+                         id=xigt_word_item.id)
+        else:
+            w = WordType(xigt_word_item.value(),
+                         id=xigt_word_item.id)
+        return w
+
+    return Phrase([word_func(xw) for xw in tier])
+
+
+
+def create_phrase_from_segments_alignments(id_to_object_mapping,
+                                           segmentation_tier: xigt.model.Tier,
+                                           aligned_tier: xigt.model.Tier,
+                                           WordType=Word):
+    """
+    Create a phrase by using a segmentation tier and the word-level groupings
+    provided by the tier with which it is aligned.
+
+    This is useful in the case of glosses which align with morphemes, but
+    are not given their own word-level groupings in the data.
+    """
+    # -- 0) Keep a mapping of word-level groups, and
+    #       the subword items that they contain.
+    word_to_segment_map = defaultdict(list)
+
+    # -- 1) Iterate over the segmented objects, and
+    #       add them to the group map.
+    for segment_item in segmentation_tier:  # type: xigt.model.Item
+        subword_obj = subword_str_to_subword(segment_item.value(), id_=segment_item.id)
+
+        # TODO: What about the case where we have a free-floating hyphen?
+        if not subword_obj.string.strip():
+            raise ImportException(
+                'Pre-segmented glosses in igt "{}" contains an empty token: "{}"'.format(segmentation_tier.igt.id,
+                                                                                         segment_item.id))
+
+        # Enter the subword obj into the mapping dict.
+        id_to_object_mapping[segment_item.id] = subword_obj
+
+        # We assume that there are alignments for every segmentation object,
+        # and that
+        if not (segment_item.alignment and id_to_object_mapping.get(segment_item.alignment)):
+            raise ImportException('Item "{}" in tier "{}" for instance "{}" missing alignment target "{}"'.format(
+                segment_item.id,
+                segmentation_tier.id,
+                segmentation_tier.igt.id,
+                segment_item.alignment
+            ))
+        aligned_obj = id_to_object_mapping[segment_item.alignment] # type: Union[SubWord, Word]
+        subword_obj.add_alignment(aligned_obj)
+
+        aligned_word = aligned_obj if isinstance(aligned_obj, Word) else aligned_obj.word
+
+        word_to_segment_map[aligned_word].append(subword_obj)
+
+    # -- 2) Check that our group map contains the same number of groups as
+    #       there exist in the aligned tier.
+    assert len(aligned_tier) == len(word_to_segment_map)
+
+    # -- 3) Now, create words based on the groupings provided by the
+    #       group map.
+    word_groups = sorted(word_to_segment_map.keys(), key=lambda word: word.index)
+    phrase = Phrase()
+    for aligned_word in word_groups:  # type: Word
+        new_word = WordType(subwords=word_to_segment_map[aligned_word],
+                      id_=item_id('gw', aligned_word.index))
+        new_word.add_alignment(aligned_word)
+        phrase.add_word(new_word)
+    return phrase
+
+
+
+def load_words(id_to_object_mapping,
+               words_tier=None, segmentation_tier=None, alignment_tier=None,
+               do_segmentation=True, WordType=Word):
+    """
+    Given a words tier (tier) and tier that provides segmentation for that tier, but which
+    may be None (segmentation_tier), return a phrase with those words/subwords.
+
+    There are
+        A. A words tier and segmentation tier exist
+            - Use segmentation tier, check segmentation exists for all words.
+        B. A words tier exists, but no segmentation tier
+            - Segment the words tier.
+        C. No words tier exists, a segmentation tier is aligned with a tier that has words.
+            - Group the segments according to the aligned words.
+        D. No words tier exists, no segmentation tier exists.
+            - Return an empty phrase
+
+    :rtype: Phrase
     """
 
-    # if there's no result for the supplied tier, return
-    # an empty phrase.
-    if not tier:
-        return Phrase()
-
-    # If there is no tier providing segmentation,
-    # create the words tier based on that.
-    words = []
-    for xigt_word_item in tier:  # type: xigt.model.Item
-        # If this word has segmentation in the morphs,
-        # create it from there instead.
+    # -- C / D) No words tier exists...
+    if not words_tier:
         if segmentation_tier:
-            morph_segments = [morph for morph in segmentation_tier if morph.segmentation == xigt_word_item.id]
+            assert alignment_tier
+            IMPORT_LOG.info('Creating words tier from combination of segmentation "{}" and aligned tier "{}"'.format(
+                segmentation_tier.id, alignment_tier.id
+            ))
+            return create_phrase_from_segments_alignments(id_to_object_mapping,
+                                                          segmentation_tier,
+                                                          alignment_tier,
+                                                          WordType)
         else:
-            morph_segments = []
-        if morph_segments:
-            morphs = []
-            for xigt_subword in morph_segments:  # type: xigt.model.Item
-                sw = SubWord(clean_subword_string(xigt_subword.value()), id=xigt_subword.id)
-                id_to_object_mapping[xigt_subword.id] = sw
+            return Phrase()
 
-                if xigt_subword.alignment and id_to_object_mapping.get(xigt_subword.alignment):
-                    sw.add_alignment(id_to_object_mapping.get(xigt_subword.alignment))
+    # -- B) If there's not a segmentation tier, return the phrase
+    #       created by the words tier alone.
+    elif not segmentation_tier:
+        return create_phrase_from_words_tier(words_tier,
+                                             do_segmentation=do_segmentation,
+                                             WordType=WordType)
 
-                morphs.append(sw)
-            w = WordType(subwords=morphs, id='{}{}'.format(tier.id, len(words)+1))
+    # -- A) If there is both a words tier and segmentation tier,
+    #       use the segmentation provided by the segmentation tier.
+    elif segmentation_tier and words_tier:
+        words = []
 
-        # Else if we want to segment the words
-        elif segment:
-            w = WordType(subwords=morph_tokenize(xigt_word_item.value()), id=xigt_word_item.id)
-        else:
-            w = WordType(xigt_word_item.value(), id=xigt_word_item.id)
+        # For each word in the tier, retrieve the portions of the word
+        # that are given as segments
+        for xigt_word_item in words_tier:  # type: xigt.model.Item
+            morph_segments = [morph for morph in segmentation_tier
+                              if morph.segmentation == xigt_word_item.id]
 
-        id_to_object_mapping[xigt_word_item.id] = w
-        words.append(w)
+            # If the segmentation tier is provided,
+            # we assume that every word has some form
+            # of segmentation.
+            if not morph_segments:
+                raise SegmentationTierException('Segmentation tier provided for instance "{}", but no segments for word "{}"'.format(words_tier.igt.id,
 
-    return Phrase(words)
+                                                                                                                   xigt_word_item.id))
+            else:
+                morphs = []
+                for xigt_subword in morph_segments:  # type: xigt.model.Item
+
+                    # TODO: What if there is a bare "-" here? Should probably attach to the left or right.
+                    sw = subword_str_to_subword(xigt_subword.value(), id_=xigt_subword.id)
+                    id_to_object_mapping[xigt_subword.id] = sw
+
+                    if xigt_subword.alignment and id_to_object_mapping.get(xigt_subword.alignment):
+                        sw.add_alignment(id_to_object_mapping.get(xigt_subword.alignment))
+
+                    morphs.append(sw)
+                w = WordType(subwords=morphs,
+                             id_=item_id(words_tier.id, len(words)+1))
+
+
+
+            id_to_object_mapping[xigt_word_item.id] = w
+            words.append(w)
+
+        return Phrase(words)
+    else:
+        raise ImportException("Unable to create phrase.")
+
+
 
 
 def parse_trans_tier(inst, id_to_object_mapping):
@@ -345,7 +455,9 @@ def parse_trans_tier(inst, id_to_object_mapping):
     trans_words_tier = xigt_find(inst, segmentation='t', type='words')
     if trans_words_tier:
         IMPORT_LOG.debug("trans-words tier found.")
-        return load_words(trans_words_tier, None, id_to_object_mapping, WordType=TransWord)
+        return load_words(id_to_object_mapping,
+                          words_tier=trans_words_tier,
+                          WordType=TransWord)
 
     if not trans_tier:
         return None
@@ -356,11 +468,12 @@ def parse_trans_tier(inst, id_to_object_mapping):
 
     # Otherwise, tokenize the words on the translation tier and create a
     # new phrase.
-    trans_phrase = Phrase(id='tw')
+    trans_phrase = Phrase(id_='tw')
     trans_tier_str = trans_tier[0].value()
     IMPORT_LOG.debug('No trans-word tier found for instance "{}", tokenizing trans phrase: "{}"'.format(inst.id, trans_tier_str))
     for i, word in enumerate(word_tokenize(trans_tier_str)):
-        trans_phrase.append(TransWord(word, id='{}{}'.format('tw', i+1)))
+        trans_phrase.append(TransWord(word,
+                                      id_=item_id('tw', i+1)))
     return trans_phrase
 
 def parse_pos(inst, pos_id, id_to_object_mapping):
@@ -561,6 +674,3 @@ if __name__ == '__main__':
     #     print(xigt.codecs.xigtxml.encode_igt(inst))
     #     print(parse_xigt(inst))
 
-import unittest
-class segmentTests(unittest.TestCase):
-    pass

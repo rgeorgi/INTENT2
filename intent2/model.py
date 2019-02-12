@@ -206,7 +206,14 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTok
 
     For word-level items. Every word must contain at least one subword.
     """
-    def __init__(self, string=None, subwords=None, id=None):
+    def __init__(self, string=None, subwords=None, id_=None):
+        """
+
+        :param string:
+        :param subwords:
+        :type subwords: Iterable[SubWord]
+        :param id_:
+        """
         assert (string or subwords) and not (string and subwords)
         if string is not None:
             self._subwords = [SubWord(string, word=self, index=0)]
@@ -219,7 +226,7 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTok
                 self._subwords[i]._index = i
         self._phrase = None
         self._index = None
-        self._id = id
+        self._id = id_
 
     def __repr__(self):
         return '(w: {} [{}])'.format(', '.join([repr(sw) for sw in self.subwords]), self.index)
@@ -250,7 +257,8 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTok
     def index(self): return self._index
 
     @property
-    def hyphenated(self): return '-'.join([str(s) for s in self._subwords])
+    def hyphenated(self):
+        return ''.join([s.hyphenated for s in self._subwords])
 
     @property
     def string(self): return ''.join([str(s) for s in self._subwords])
@@ -286,10 +294,22 @@ class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMix
     """
     Class to represent sub-word level items -- either morphemes or glosses.
     """
-    def __init__(self, s, word: Word=None, index=None, id=None):
+    def __init__(self, s, word: Word=None, index=None, id_=None,
+                 left_symbol: str = None, right_symbol: str = None):
+        """
+
+        :param s: The string value of the word
+        :param word: The parent object that contains this subword
+        :param index: The index of this object within its parent
+        :param id_: A string representing this object uniquely
+        :param left_symbol: A string that combines this symbol with the token to the left (e.g. - or =)
+        :param right_symbol: A string that combines this symbol with the token to the right
+        """
         self.string = s
         self._index = index
-        self._id = id
+        self._id = id_
+        self.left_symbol = left_symbol
+        self.right_symbol = right_symbol
         if word is not None:
             self.word = word
 
@@ -307,21 +327,45 @@ class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMix
     def parts(self):
         return ((self.index, part) for part in re.split('[\./]', self.string))
 
-    def __repr__(self): return '<sw: {}>'.format(self.string)
+    @property
+    def hyphenated(self):
+        """
+        :return: A string joining the subwords with the appropriate -, =, etc. to indicate
+                 morpheme segmentation.
+        :rtype: str
+        """
+        ret_str = ''
+        if self.left_symbol:
+            ret_str += self.left_symbol
+        ret_str += self.string
+        if self.right_symbol:
+            ret_str += self.right_symbol
+        return ret_str
+
+    def __repr__(self): return '<sw: {}>'.format(self.hyphenated)
+
+    def __eq__(self, other):
+        return (self.string == other.string
+                and self.left_symbol == other.left_symbol
+                and self.right_symbol == other.right_symbol
+                and self.id == other.id)
+
+    def __hash__(self):
+        return hash(self.hyphenated + '-' + self.id)
 
 
 class Phrase(list, IdMixin):
     """
     A Phrase object contains a list of words.
     """
-    def __init__(self, iterable=None, id=None):
+    def __init__(self, iterable=None, id_=None):
         if iterable is None: iterable = []
         super().__init__(iterable)
         self._root = None
         for i, w in enumerate(self):
             w._phrase = self
             w._index = i
-        self.id = id
+        self.id = id_
 
     @property
     def root(self):
@@ -335,6 +379,10 @@ class Phrase(list, IdMixin):
         w._index = len(self)
         w._phrase = self
         self.append(w)
+
+    def append(self, w: Word):
+        w._index = len(self)
+        super().append(w)
 
     def __getitem__(self, i):
         """
@@ -447,7 +495,7 @@ class Corpus(object):
     of instances
     """
     def __init__(self, instances=None):
-        self._instances = instances if instances else None
+        self._instances = instances if instances else []
 
     def __iter__(self):
         """

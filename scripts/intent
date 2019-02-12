@@ -65,6 +65,9 @@ if __name__ == '__main__':
         except ProcessException as pe:
             ROOT_LOGGER.warning('Processing failed for instance "{}": {}'.format(inst.id, pe))
 
-    with open(args.output, 'w') as out_f:
-        out_f.write(corpus_to_xigt(corp))
+    if not corp.instances:
+        ROOT_LOGGER.error("No instances found in corpus. Not writing output.")
+    else:
+        with open(args.output, 'w') as out_f:
+            out_f.write(corpus_to_xigt(corp))
 
