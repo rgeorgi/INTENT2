@@ -4,25 +4,24 @@ import sys
 from intent2.exceptions import ProcessException
 from intent2.functions import project_pos, project_dependencies
 from intent2.serialize.importers import parse_xigt_corpus
-from intent2.serialize.exporters import corpus_to_xigt, instance_to_xigt
+from intent2.serialize.exporters import corpus_to_xigt
 from intent2.alignment import heuristic_alignment, AlignException
 import argparse
-
-from intent2.utils.visualization import visualize_alignment
 from xigt.codecs.xigtxml import load
 import logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig()
 
 import sys
 
 ROOT_LOGGER = logging.getLogger()
 
 
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('-i', '--input', help='inputfile', required=True)
     p.add_argument('-o', '--output', help='Output file', required=True)
-    p.add_argument('-v', '--verbose', help='Increase verbosity', action='count')
+    p.add_argument('-v', '--verbose', help='Increase verbosity', action='count', default=0)
 
     p.add_argument('--no-align', action='store_true', help="Don't perform bilingual alignment. Also disables projection.")
     p.add_argument('--no-posproject', action='store_true', help="Disable POS projection.")
@@ -31,6 +30,15 @@ if __name__ == '__main__':
     p.add_argument('--ignore-import-errors', action='store_true', default=False, help='Skip instances that cause errors on import. They will not be ingested')
 
     args = p.parse_args()
+
+    # -------------------------------------------
+    # Set logging verbosity.
+    # -------------------------------------------
+    if args.verbose == 1:
+        ROOT_LOGGER.setLevel(logging.INFO)
+    elif args.verbose >= 2:
+        ROOT_LOGGER.setLevel(logging.DEBUG)
+    # -------------------------------------------
 
     ROOT_LOGGER.info('Loading Xigt corpus from "{}"'.format(args.input))
     xc = load(args.input, 'r')
