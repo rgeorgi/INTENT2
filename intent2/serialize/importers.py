@@ -11,7 +11,7 @@ from intent2.utils.strings import morph_tokenize, subword_str_to_subword, word_t
 from typing import Union
 
 import logging
-IMPORT_LOG = logging.getLogger()
+IMPORT_LOG = logging.getLogger('import')
 
 # -------------------------------------------
 # Test Cases
@@ -294,6 +294,33 @@ def create_phrase_from_words_tier(tier: xigt.model.Tier,
 
 
 
+def handle_freefloating_hyphens(subword_obj: SubWord, prev_subword: SubWord,
+                                tier_id, igt_id, item_id):
+    """
+    What to do if there is a subword that contains only
+    :param subword_obj:
+    :param prev_subword:
+    :return:
+    """
+    if not subword_obj.string.strip():
+        subword_symbols = subword_obj.hyphenated
+        if prev_subword is None:
+            raise SegmentationTierException("Empty token {} does not have previous token to attach to".format(subword_obj.id))
+
+        IMPORT_LOG.warning(
+            'Pre-segmented tier "{}" in igt "{}" contains an empty token: "{}"'.format(
+                tier_id, igt_id, item_id)
+        )
+        if subword_symbols:
+            IMPORT_LOG.warning('Attaching empty token "{}" ("{}") to previous token "{}"'.format(subword_obj.id,
+                                                                                                 subword_symbols,
+                                                                                                 prev_subword.id))
+            prev_subword.right_symbol = subword_symbols
+            return True
+
+
+
+
 def create_phrase_from_segments_alignments(id_to_object_mapping,
                                            segmentation_tier: xigt.model.Tier,
                                            aligned_tier: xigt.model.Tier,
@@ -311,14 +338,15 @@ def create_phrase_from_segments_alignments(id_to_object_mapping,
 
     # -- 1) Iterate over the segmented objects, and
     #       add them to the group map.
+    prev_subword = None
     for segment_item in segmentation_tier:  # type: xigt.model.Item
         subword_obj = subword_str_to_subword(segment_item.value(), id_=segment_item.id)
 
-        # TODO: What about the case where we have a free-floating hyphen?
-        if not subword_obj.string.strip():
-            raise ImportException(
-                'Pre-segmented glosses in igt "{}" contains an empty token: "{}"'.format(segmentation_tier.igt.id,
-                                                                                         segment_item.id))
+        # Handle freefloating hyphens
+        was_freefloating = handle_freefloating_hyphens(subword_obj, prev_subword,
+                                                       segmentation_tier.id, segmentation_tier.igt.id, segment_item.id)
+        if was_freefloating:
+            continue
 
         # Enter the subword obj into the mapping dict.
         id_to_object_mapping[segment_item.id] = subword_obj
@@ -338,10 +366,16 @@ def create_phrase_from_segments_alignments(id_to_object_mapping,
         aligned_word = aligned_obj if isinstance(aligned_obj, Word) else aligned_obj.word
 
         word_to_segment_map[aligned_word].append(subword_obj)
+        prev_subword = subword_obj
 
     # -- 2) Check that our group map contains the same number of groups as
     #       there exist in the aligned tier.
-    assert len(aligned_tier) == len(word_to_segment_map)
+    if len(aligned_tier) != len(word_to_segment_map):
+        IMPORT_LOG.warning('Mismatch between number of word groups for segmentation tier "{}" and aligned tier "{}" in instance "{}"'.format(
+            segmentation_tier.id,
+            aligned_tier.id,
+            aligned_tier.igt.id
+        ))
 
     # -- 3) Now, create words based on the groupings provided by the
     #       group map.
@@ -373,13 +407,20 @@ def load_words(id_to_object_mapping,
         D. No words tier exists, no segmentation tier exists.
             - Return an empty phrase
 
+    :type words_tier: xigt.model.Tier
+    :type segmentation_tier: xigt.model.Tier
+    :type alignment_tier: xigt.model.Tier
+    :type id_to_object_mapping: dict
     :rtype: Phrase
     """
 
     # -- C / D) No words tier exists...
     if not words_tier:
         if segmentation_tier:
-            assert alignment_tier
+            if not alignment_tier:
+                raise SegmentationTierException('Attempt to create phrase from segmentation tier "{}" in instance "{}" with no word alignments.'.format(
+                    segmentation_tier.id, segmentation_tier.igt.id
+                ))
             IMPORT_LOG.info('Creating words tier from combination of segmentation "{}" and aligned tier "{}"'.format(
                 segmentation_tier.id, alignment_tier.id
             ))
@@ -404,6 +445,7 @@ def load_words(id_to_object_mapping,
 
         # For each word in the tier, retrieve the portions of the word
         # that are given as segments
+        prev_sw = None
         for xigt_word_item in words_tier:  # type: xigt.model.Item
             morph_segments = [morph for morph in segmentation_tier
                               if morph.segmentation == xigt_word_item.id]
@@ -417,23 +459,37 @@ def load_words(id_to_object_mapping,
                                                                                                                    xigt_word_item.id))
             else:
                 morphs = []
+
                 for xigt_subword in morph_segments:  # type: xigt.model.Item
 
-                    # TODO: What if there is a bare "-" here? Should probably attach to the left or right.
                     sw = subword_str_to_subword(xigt_subword.value(), id_=xigt_subword.id)
+                    was_freefloating = handle_freefloating_hyphens(sw, prev_sw,
+                                                                   segmentation_tier.id,
+                                                                   segmentation_tier.igt.id,
+                                                                   xigt_subword.id)
+                    if was_freefloating:
+                        continue
+
+
                     id_to_object_mapping[xigt_subword.id] = sw
 
                     if xigt_subword.alignment and id_to_object_mapping.get(xigt_subword.alignment):
                         sw.add_alignment(id_to_object_mapping.get(xigt_subword.alignment))
 
                     morphs.append(sw)
-                w = WordType(subwords=morphs,
-                             id_=item_id(words_tier.id, len(words)+1))
+                    prev_sw = sw
+
+                # Skip creating a word if it only consisted of an empty hyphen./
+                if morphs:
+                    w = WordType(subwords=morphs,
+                                 id_=item_id(words_tier.id, len(words)+1))
 
 
 
-            id_to_object_mapping[xigt_word_item.id] = w
-            words.append(w)
+                    id_to_object_mapping[xigt_word_item.id] = w
+                    words.append(w)
+                else:
+                    IMPORT_LOG.warning('Word "{}" was skipped because ')
 
         return Phrase(words)
     else:
@@ -573,13 +629,9 @@ def parse_xigt_instance(xigt_inst: Igt):
         """
         Attempt to parse
         """
-        try:
-            phrase = func(xigt_inst, id_to_object_mapping)
-            if not phrase:
-                return parse_odin(xigt_inst, odin_tag, WordType)
-        except AssertionError as ae:
-            IMPORT_LOG.error("Error parsing instance {}: {}".format(xigt_inst.id, ae))
-            phrase = None
+        phrase = func(xigt_inst, id_to_object_mapping)
+        if not phrase:
+            return parse_odin(xigt_inst, odin_tag, WordType)
         return phrase
 
 

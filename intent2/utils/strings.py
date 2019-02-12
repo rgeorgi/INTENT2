@@ -5,7 +5,7 @@ import nltk
 from intent2.model import Phrase, SubWord, Word
 
 import logging
-STRING_LOG = logging.getLogger()
+STRING_LOG = logging.getLogger('string')
 
 # -------------------------------------------
 # Some String Constants
@@ -84,7 +84,7 @@ def subword_str_to_subword(subword_string, id_=None):
         left_seg = subword_string[0]
         subword_string = subword_string[1:]
     if not subword_string:
-        STRING_LOG.warning('Subword "{}" appears to only contain a morph separator.'.format(original_subword))
+        STRING_LOG.info('Subword "{}" appears to only contain a morph separator.'.format(original_subword))
     elif subword_string[-1] in MORPH_SYMBOLS:
         right_seg = subword_string[-1]
         subword_string = subword_string[:-1]

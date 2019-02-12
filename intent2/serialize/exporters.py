@@ -5,7 +5,7 @@ from typing import Iterable, Tuple, Union, List
 import logging
 from .consts import *
 
-EXPORT_LOG = logging.getLogger()
+EXPORT_LOG = logging.getLogger('export')
 
 def corpus_to_xigt(corp: Corpus):
     """
@@ -101,7 +101,7 @@ def tier_to_xigt(igt: Igt,
                 subword_id = subword.id if subword.id else '{}{}'.format(sw_dict[ID_KEY],
                                                                          num_subwords+1)
 
-                subword_item = Item(text=subword.string, id=subword_id)
+                subword_item = Item(text=subword.hyphenated, id=subword_id)
 
                 if subword.alignments and sw_dict.get(ALN_KEY):
                     subword_item.alignment = ','.join([a.id for a in subword.alignments
@@ -144,7 +144,10 @@ def xigt_add_bilingual_alignment(xigt_inst: Igt, trans: Phrase):
                                         'target': aligned_gloss.id})
             bilingual_aln_tier.append(aln_item)
             aln_num += 1
-    xigt_inst.append(bilingual_aln_tier)
+
+    # Only append if it's not empty.
+    if bilingual_aln_tier:
+        xigt_inst.append(bilingual_aln_tier)
 
 def xigt_add_dependencies(xigt_inst: Igt, phrase: Phrase):
     """
@@ -160,7 +163,8 @@ def xigt_add_dependencies(xigt_inst: Igt, phrase: Phrase):
         if dep_link.type:
             dep_item.text = dep_link.type
         dep_tier.append(dep_item)
-    xigt_inst.append(dep_tier)
+    if dep_tier:
+        xigt_inst.append(dep_tier)
 
 
 def instance_to_xigt(inst: Instance):

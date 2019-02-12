@@ -5,7 +5,7 @@ Module to hold all the logic for heuristic alignment
 from intent2.model import Instance, Word
 from intent2.processing import process_trans_if_needed, load_spacy
 from typing import List, Tuple
-from spacy.tokens import Token
+from spacy.tokens import Token, Doc
 
 # -------------------------------------------
 # Set up logging
@@ -152,7 +152,7 @@ def heuristic_alignment(inst: Instance, heur_list = None):
         gloss_parts.extend(gloss_w.subword_parts)
 
     spacy_eng = load_spacy()
-    gloss_part_doc = spacy_eng.tokenizer.tokens_from_list([part[1] for part in gloss_parts])
+    gloss_part_doc = Doc(spacy_eng.vocab, words=[part[1] for part in gloss_parts])
     # spacy_eng.tagger(gloss_part_doc)
     # spacy_eng.parser(gloss_part_doc)
 
