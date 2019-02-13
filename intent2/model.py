@@ -85,9 +85,14 @@ class DependencyStructure(set):
         """
         self._head_map = defaultdict(set)
         self._child_map = defaultdict(set)
-        self._roots = set([])
+        self._roots = set([]) # type: set[Word]
+        self._words = set([]) # type: set[Word]
         for link in links:
             self.add(link)
+
+    def __iter__(self):
+        """:rtype: DependencyLink"""
+        return super().__iter__()
 
     def add(self, link):
         """
@@ -101,6 +106,13 @@ class DependencyStructure(set):
         self._remove_extra(link)
 
     def remove_word(self, word, promote=True):
+        """
+        Remove a word from the set of dependency links that
+
+        :param word:
+        :param promote:
+        :return:
+        """
         my_child_links = self.get_child_links(word)
         my_parent_links = self.get_parent_links(word)
         my_parents = {link.parent for link in my_parent_links}
@@ -117,17 +129,51 @@ class DependencyStructure(set):
         for parent_link in list(my_parent_links):
             self.remove(parent_link)
 
+    def replace_word(self, src_word, tgt_word, remove=True):
+        """
+        Replace all instances of the source word with the target word.
+
+        If remove is False, the new word will be added as a sibling, rather than in-place.
+
+        :type src_word: Word
+        :type tgt_word: Word
+        """
+        for child_link in list(self.get_child_links(src_word)):
+            new_link = DependencyLink(child=child_link.child, parent=tgt_word, link_type=child_link.type)
+            if remove:
+                self.remove(child_link)
+            self.add(new_link)
+
+        for parent_link in list(self.get_parent_links(src_word)):
+            new_link = DependencyLink(child=tgt_word, parent=parent_link.parent, link_type=parent_link.type)
+            if remove:
+                self.remove(parent_link)
+            self.add(new_link)
+
+
     def _add_extra(self, link):
         self._child_map[link.child].add(link)
         self._head_map[link.parent].add(link)
         if link.parent is None:
             self._roots.add(link)
+        else:
+            self._words.add(link.parent)
+        self._words.add(link.child)
 
     def _remove_extra(self, link):
         self._child_map[link.child].remove(link)
         self._head_map[link.parent].remove(link)
         if link.parent is None:
             self._roots.remove(link)
+
+        if not (self._child_map[link.child] or self._head_map[link.child]):
+            self._words -= set([link.child])
+        if not (self._child_map[link.parent] or self._head_map[link.parent]):
+            self._words -= set([link.child])
+
+    @property
+    def words(self):
+        return sorted(self._words, key=lambda word: word.index)
 
     def __or__(self, other):
         for link in other:
@@ -152,7 +198,10 @@ class DependencyStructure(set):
         """
         return self._head_map[word]
 
-    def visualize(self, words):
+    def visualize(self):
+        """
+        Visualize the dependency structure.
+        """
         def root_or_parent(word):
             if word.parent is None:
                 return '_ROOT_'
@@ -163,9 +212,9 @@ class DependencyStructure(set):
             parents = ','.join([root_or_parent(w) for w in self.get_parent_links(word)])
             if not parents:
                 parents = 'None'
-            return '{}->({})'.format(word, parents)
+            return '{}->({})'.format(word.string, parents)
 
-        return '[{}]'.format(', '.join(visualize_word(word) for word in words))
+        return '[{}]'.format(', '.join(visualize_word(word) for word in self.words))
 
 
 
@@ -190,6 +239,7 @@ class DependencyMixin(object):
     @property
     def dependencies(self):
         """
+        Return the set of dependency links in which this item is the child.
         :rtype: set[DependencyLink]
         """
         return {d for d in self._dependency_links if d.child == self}
@@ -197,6 +247,7 @@ class DependencyMixin(object):
     @property
     def dependents(self):
         """
+        Return the set of dependency links in which this item is the parent.
         :rtype: set[DependencyLink]
         """
         return {d for d in self._dependency_links if d.parent == self}
@@ -320,6 +371,20 @@ class DependencyLink(object):
             new_links.add(new_link)
         return new_links
 
+    @property
+    def depth(self):
+        """
+        Follow this link through its parents until it finds a root, and return
+        how many steps that took
+        """
+        if self.parent is None:
+            return 0
+        elif not self.parent.dependencies:
+            return 1
+        else:
+            return min([link.depth for link in self.parent.dependencies]) + 1
+
+
 # -------------------------------------------
 # Non-Mixin Classes
 # -------------------------------------------
@@ -409,7 +474,35 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTok
     @property
     def word(self): return self
 
-class TransWord(Word): pass
+class TransWord(Word):
+
+    @property
+    def aligned_lang_words(self):
+        """
+        The normal behavior for TransWords is to be aligned to gloss
+        words or morphemes. This function returns the set of language
+        words that those gloss words/morphemes are aligned to (or
+        LangWords, if they're aligned directly).
+
+        :rtype: set[LangWord]
+        """
+        ret_words = set([])
+        for aligned_item in self.alignments:
+
+            # Get the aligned word for this item,
+            # which should be a gloss or
+            if isinstance(aligned_item, SubWord):
+                aligned_word = aligned_item.word
+            elif isinstance(aligned_item, Word):
+                aligned_word = aligned_item
+
+            if isinstance(aligned_word, LangWord):
+                ret_words.add(aligned_item)
+            else:
+                ret_words |= {w for w in aligned_word.alignments if isinstance(w, LangWord)}
+        return ret_words
+
+
 class LangWord(Word): pass
 class GlossWord(Word): pass
 
@@ -644,8 +737,8 @@ class DependencyTests(unittest.TestCase):
 
     def test_dependencies(self):
         self.wordA.add_dependent(self.wordB)
-        self.assertTrue(len(self.wordA.dependency_structure) == 1)
-        dep = next(iter(self.wordA.dependency_structure))
+        self.assertTrue(len(self.wordA.dependency_links) == 1)
+        dep = next(iter(self.wordA.dependency_links))
 
         # Make sure
         self.assertTrue(dep.child == self.wordB)
@@ -655,10 +748,10 @@ class DependencyTests(unittest.TestCase):
 
         # Add one more
         self.wordA.add_dependent(self.wordC)
-        self.assertTrue(len(self.wordA.dependency_structure) == 2)
+        self.assertTrue(len(self.wordA.dependency_links) == 2)
 
-        depA = self.wordA.dependency_structure
-        depC = self.wordC.dependency_structure
+        depA = self.wordA.dependency_links
+        depC = self.wordC.dependency_links
 
         self.assertTrue(len(depA & depC) == 1)
 
@@ -693,13 +786,17 @@ class PhraseTests(unittest.TestCase):
 class WordTests(unittest.TestCase):
     def setUp(self):
         self.wordD = Word('Test')
-        self.swordA = SubWord('bett')
+        self.swordA = SubWord('bett', right_symbol='-')
         self.swordB = SubWord('er')
+        self.swordC = SubWord('bett', right_symbol='=')
         self.wordE = Word(subwords=[self.swordA, self.swordB])
+        self.wordF = Word(subwords=[self.swordC, self.swordB])
 
-    def test_subwords(self):
-        self.assertEqual(str(self.wordE), 'better')
+    def test_subword_strings(self):
+        self.assertEqual(self.wordE.string, 'better')
         self.assertEqual(self.wordE.hyphenated, 'bett-er')
+        self.assertEqual(self.wordF.string, 'better')
+        self.assertEqual(self.wordF.hyphenated, 'bett=er')
         self.assertEqual(len(self.wordE.subwords), 2)
 
     def test_word_equivalencies(self):
@@ -756,4 +853,3 @@ class TagTests(unittest.TestCase):
         self.assertIsNone(self.wordA.pos)
         self.wordA.pos = 'NN'
         self.assertIsNotNone(self.wordA.pos)
-        self.assertEqual(self.wordA)
