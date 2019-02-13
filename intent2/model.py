@@ -1,5 +1,6 @@
 import re
 import unittest
+from collections import defaultdict
 from typing import Generator, Iterable, Iterator, Union
 
 
@@ -73,6 +74,101 @@ class GlossableMixin(object):
 
     @gloss.setter
     def gloss(self, val): setattr(self, '_gloss', val)
+
+class DependencyStructure(set):
+    """
+    A class to implement
+    """
+    def __init__(self, links = None):
+        """
+        :type links: Iterable[DependencyLink]
+        """
+        self._head_map = defaultdict(set)
+        self._child_map = defaultdict(set)
+        self._roots = set([])
+        for link in links:
+            self.add(link)
+
+    def add(self, link):
+        """
+        :type link: DependencyLink
+        """
+        super().add(link)
+        self._add_extra(link)
+
+    def remove(self, link):
+        super().remove(link)
+        self._remove_extra(link)
+
+    def remove_word(self, word, promote=True):
+        my_child_links = self.get_child_links(word)
+        my_parent_links = self.get_parent_links(word)
+        my_parents = {link.parent for link in my_parent_links}
+
+        for child_link in list(my_child_links):
+            self.remove(child_link)
+
+            # Add all the children in links that this word
+            # parents as links to the parents of this link.
+            if promote:
+                for parent in my_parents:
+                    self.add(DependencyLink(child_link.child, parent, link_type=child_link.type))
+
+        for parent_link in list(my_parent_links):
+            self.remove(parent_link)
+
+    def _add_extra(self, link):
+        self._child_map[link.child].add(link)
+        self._head_map[link.parent].add(link)
+        if link.parent is None:
+            self._roots.add(link)
+
+    def _remove_extra(self, link):
+        self._child_map[link.child].remove(link)
+        self._head_map[link.parent].remove(link)
+        if link.parent is None:
+            self._roots.remove(link)
+
+    def __or__(self, other):
+        for link in other:
+            self.add(link)
+
+    def __sub__(self, other):
+        for link in other:
+            self.remove(link)
+
+    def get_parent_links(self, child):
+        """
+        Return the links in which the given word is the child
+
+        :rtype: set[DependencyLink]
+        """
+        return self._child_map[child]
+
+    def get_child_links(self, word):
+        """
+        Return the links in which the given word is the parent
+        :rtype: set[DependencyLink]
+        """
+        return self._head_map[word]
+
+    def visualize(self, words):
+        def root_or_parent(word):
+            if word.parent is None:
+                return '_ROOT_'
+            else:
+                return word.parent.string
+
+        def visualize_word(word):
+            parents = ','.join([root_or_parent(w) for w in self.get_parent_links(word)])
+            if not parents:
+                parents = 'None'
+            return '{}->({})'.format(word, parents)
+
+        return '[{}]'.format(', '.join(visualize_word(word) for word in words))
+
+
+
 
 class DependencyMixin(object):
     """
@@ -195,7 +291,14 @@ class DependencyLink(object):
         self.type = link_type
 
     def __repr__(self):
-        return '<dep {} --> {}>'.format(self.child, self.parent)
+        ret_str = '<dep {} --> {}'.format(self.child, self.parent)
+        if self.type:
+            ret_str += ' ({})'.format(self.type)
+        return ret_str + '>'
+
+
+    def __hash__(self):
+        return hash((self.child, self.parent, self.type))
 
     def promote(self):
         """
@@ -213,7 +316,7 @@ class DependencyLink(object):
         for parent_link in self.parent.dependencies:
             new_link = DependencyLink(child=self.child,
                                       parent=parent_link.parent,
-                                      type=self.type)
+                                      link_type=self.type)
             new_links.add(new_link)
         return new_links
 
@@ -381,19 +484,11 @@ class Phrase(list, IdMixin):
     def __init__(self, iterable=None, id_=None):
         if iterable is None: iterable = []
         super().__init__(iterable)
-        self._root = None
         for i, w in enumerate(self):
             w._phrase = self
             w._index = i
         self.id = id_
 
-    @property
-    def root(self):
-        """:rtype: Word"""
-        return self._root
-
-    @root.setter
-    def root(self, val): self._root = val
 
     def add_word(self, w: Word):
         w._index = len(self)
@@ -437,17 +532,17 @@ class Phrase(list, IdMixin):
         return '[p: {}]'.format(', '.join([repr(s) for s in self]))
 
     @property
-    def dependency_links(self):
+    def dependency_structure(self):
         """
         Check all of the dependency relationships of the
         words and return a dependency parse.
 
-        :rtype: set[DependencyLink]
+        :rtype: DependencyStructure
         """
         all_links = set([])
         for word in self:
             all_links |= word.dependency_links
-        return all_links
+        return DependencyStructure(all_links)
 
     @property
     def subwords(self):
@@ -549,8 +644,8 @@ class DependencyTests(unittest.TestCase):
 
     def test_dependencies(self):
         self.wordA.add_dependent(self.wordB)
-        self.assertTrue(len(self.wordA.dependency_links) == 1)
-        dep = next(iter(self.wordA.dependency_links))
+        self.assertTrue(len(self.wordA.dependency_structure) == 1)
+        dep = next(iter(self.wordA.dependency_structure))
 
         # Make sure
         self.assertTrue(dep.child == self.wordB)
@@ -560,10 +655,10 @@ class DependencyTests(unittest.TestCase):
 
         # Add one more
         self.wordA.add_dependent(self.wordC)
-        self.assertTrue(len(self.wordA.dependency_links) == 2)
+        self.assertTrue(len(self.wordA.dependency_structure) == 2)
 
-        depA = self.wordA.dependency_links
-        depC = self.wordC.dependency_links
+        depA = self.wordA.dependency_structure
+        depC = self.wordC.dependency_structure
 
         self.assertTrue(len(depA & depC) == 1)
 

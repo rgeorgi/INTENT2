@@ -14,12 +14,15 @@ from typing import Iterable, Generator, List, Tuple, Iterator
 from spacy.tokens import Doc, Span, Token
 import logging
 
+from intent2.utils.visualization import visualize_alignment
+
 ENRICH_LOG = logging.getLogger('enrich')
+
 
 # -------------------------------------------
 # Dependency Parsing
 # -------------------------------------------
-class DependencySet(set[DependencyLink]):
+class DependencySet(set):
     """
     Rather than representing a dependency structure
     as a tree, just keep it as a set of links between
@@ -30,35 +33,11 @@ class DependencySet(set[DependencyLink]):
             iterable = []
         ds = cls(iterable)
 
+# -------------------------------------------
+# Dependency Projection
+# -------------------------------------------
 
-def extract_ds(p: Phrase):
-    """
-    Given a phrase that's been assigned a dependency analysis,
-    extract it as a tree that can be manipulated and traversed.
-
-    A dependency tree needs:
-       * Parent
-       * Child
-       * Edge label
-    """
-    dep_links = p.dependency_links
-
-    # --1) Look for links with no
-    roots = []
-    for dep_link in dep_links:
-        if dep_link.parent is None:
-            roots.append(dep_link.child)
-
-    if len(roots) > 1:
-        ENRICH_LOG.error('Multiple roots found for dependency tree in instance phrase "{}"'.format(p.id))
-        raise Exception('Handling multiple roots not implemented')
-    else:
-        # Return with a dummy root, so that
-        # in case the actual root is deleted,
-        # we can return a tree with multiple roots.
-        return DependencyTree('_ROOT_',
-                              [build_dt(roots[0], 'root')],
-                              '_ROOT_')
+DS_PROJ_LOG = logging.getLogger('ds_project')
 
 def project_ds(inst: Instance):
     """
@@ -83,22 +62,33 @@ def project_ds(inst: Instance):
             4. In Step 4, we attach unaligned source words to the DS
             using the heuristics described in (Quirk et al. 2005).
     """
-    # -- 0) Start by extracting the dependency
-    #      tree from the translation.
+    # -- 0) Start by ensuring the translation line has a ds.
     process_trans_if_needed(inst)
-    t_ds = extract_ds(inst.trans)
 
-    # -- 1) Copy English DS and remove unaligned words.
-    proj_ds = t_ds.copy()
+    trans_ds = inst.trans.dependency_structure
 
-    proj_ds.pretty_print()
+    print(visualize_alignment(inst))
+    print(trans_ds.visualize(inst.trans))
 
-    nodes = list(proj_ds.subtrees())
-    for node in nodes:
-        if not node._label.alignments:
-            node.delete()
+    for trans_word in inst.trans:
+        if not trans_word.alignments:
+            trans_ds.remove_word(trans_word)
 
-    proj_ds.pretty_print()
+    print(trans_ds.visualize(inst.trans))
+
+
+    sys.exit()
+
+    # -- 1) Remove all unaligned words. Do this by looking at all of the
+    DS_PROJ_LOG.debug('Removing unaligned words from instance "{}"'.format(inst.id))
+    unaligned_words = {trans_word for trans_word in inst.trans if not trans_word.alignments}
+    for trans_word in inst.trans:
+        if not trans_word.alignments:
+            new_links = set()
+            for dependency_link in trans_word.dependency_structure:
+                new_links |= dependency_link.promote()
+            print(trans_word.dependency_structure, new_links)
+
 
 
 
@@ -142,37 +132,5 @@ def combine_subword_tags(p: Phrase):
         best_tags = sorted(tags, key=lambda tag: precedence.index(tag))
         word.pos = best_tags[0] if best_tags else None
 
-# -------------------------------------------
-# Dependency Projection
-# -------------------------------------------
 
-from unittest import TestCase
-class DepTreeTests(TestCase):
-    def test_delete_root(self):
-        dt = DependencyTree('_ROOT_', [], '_ROOT_')
-        self.assertRaises(Exception, dt.delete)
 
-    def test_deletion_promotes(self):
-        orig_dt = DependencyTree('_ROOT_', [
-            DependencyTree('a', [DependencyTree('b')]),
-            DependencyTree('c')
-        ])
-        tgt_dt = DependencyTree('_ROOT_', [
-            DependencyTree('b'),
-            DependencyTree('c')
-        ])
-
-        orig_dt[0].delete(promote=True)
-        self.assertEqual(orig_dt, tgt_dt)
-
-    def test_deletion_no_promotes(self):
-        orig_dt = DependencyTree('_ROOT_', [
-            DependencyTree('a', [DependencyTree('b')]),
-            DependencyTree('c')
-        ])
-        tgt_dt = DependencyTree('_ROOT_', [
-            DependencyTree('c')
-        ])
-
-        orig_dt[0].delete(promote=False)
-        self.assertEqual(orig_dt, tgt_dt)
