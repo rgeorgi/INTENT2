@@ -5,7 +5,7 @@ from typing import Iterable, Tuple, Union, List
 import logging
 from .consts import *
 
-EXPORT_LOG = logging.getLogger()
+EXPORT_LOG = logging.getLogger('export')
 
 def corpus_to_xigt(corp: Corpus):
     """
@@ -16,8 +16,12 @@ def corpus_to_xigt(corp: Corpus):
     EXPORT_LOG.info('Preparing to export INTENT2 Coprus to Xigt')
     for inst in corp.instances:
         xigt_inst = instance_to_xigt(inst)
-        EXPORT_LOG.debug(inst)
-        xc.append(xigt_inst)
+        try:
+            dumps(XigtCorpus(igts=[xigt_inst]))
+            xc.append(xigt_inst)
+        except TypeError as te:
+            EXPORT_LOG.error('Error in serializing instance "{}": {}'.format(inst.id, te))
+            raise te
     EXPORT_LOG.info('Corpus successfully converted. Returning string for writing.')
     return dumps(xc)
 
@@ -28,9 +32,14 @@ def tier_to_xigt(igt: Igt,
     """
     Given
     """
-    # -- 1) Create phrase tier if expected.
+    # -- 0) Do nothing if the phrase does not exist.
+    if phrase is None:
+        return
+
+    # -- 1) Create phrase tier if expected, and if
+    #       there is a phrase to serialize.
     phrase_dict = get_xigt_str([phrase_type, PHRASE_KEY])
-    if phrase_dict:
+    if phrase and phrase_dict:
         phrase_tier = Tier(type=phrase_dict[TYPE_KEY],
                            id=phrase_dict[ID_KEY],
                            items=[Item(id=phrase_dict[ID_KEY]+'1',
@@ -43,7 +52,7 @@ def tier_to_xigt(igt: Igt,
     if word_dict:
         word_tier = Tier(type=word_dict[TYPE_KEY],
                          id=word_dict[ID_KEY],
-                         segmentation=word_dict[SEG_KEY])
+                         segmentation=word_dict.get(SEG_KEY))
         word_pos_tier = Tier(type='pos',
                              alignment=word_dict[ID_KEY],
                              id='{}pos'.format(word_dict[ID_KEY]))
@@ -64,6 +73,10 @@ def tier_to_xigt(igt: Igt,
     def add_to_pos_tier(token: Union[Word, SubWord],
                         token_id: str,
                         tier: Tier):
+        """
+        Given a token (a word or subword),
+        add its
+        """
         if token.pos:
             token_pos_item = Item(text=token.pos,
                                   id='{}pos'.format(token_id),
@@ -88,7 +101,7 @@ def tier_to_xigt(igt: Igt,
                 subword_id = subword.id if subword.id else '{}{}'.format(sw_dict[ID_KEY],
                                                                          num_subwords+1)
 
-                subword_item = Item(text=subword.string, id=subword_id)
+                subword_item = Item(text=subword.hyphenated, id=subword_id)
 
                 if subword.alignments and sw_dict.get(ALN_KEY):
                     subword_item.alignment = ','.join([a.id for a in subword.alignments
@@ -97,7 +110,7 @@ def tier_to_xigt(igt: Igt,
                     subword_tier.alignment = sw_dict[ALN_KEY]
 
                 if word_dict:
-                    subword_item.segmentation=word_id
+                    subword_item.segmentation = word_id
                 subword_tier.append(subword_item)
 
                 add_to_pos_tier(subword, subword_id, subword_pos_tier)
@@ -121,18 +134,20 @@ def xigt_add_bilingual_alignment(xigt_inst: Igt, trans: Phrase):
     """
 
     bilingual_aln_tier = Tier(id='a', type='bilingual-alignments',
-                              attributes={'source':'tw', 'target':'g'})
+                              attributes={'source': 'tw', 'target': 'g'})
     aln_num = 0
     for t_w in trans:
         for aligned_gloss in t_w.alignments:
 
-
             aln_item = Item(id='a{}'.format(aln_num+1),
-                            attributes={'source':t_w.id,
-                                        'target':aligned_gloss.id})
+                            attributes={'source': t_w.id,
+                                        'target': aligned_gloss.id})
             bilingual_aln_tier.append(aln_item)
             aln_num += 1
-    xigt_inst.append(bilingual_aln_tier)
+
+    # Only append if it's not empty.
+    if bilingual_aln_tier:
+        xigt_inst.append(bilingual_aln_tier)
 
 def xigt_add_dependencies(xigt_inst: Igt, phrase: Phrase):
     """
@@ -140,7 +155,7 @@ def xigt_add_dependencies(xigt_inst: Igt, phrase: Phrase):
     render it into
     """
     dep_tier = Tier(type='dependencies', id='{}ds'.format(phrase.id))
-    for i, dep_link in enumerate(phrase.dependencies):
+    for i, dep_link in enumerate(phrase.dependency_links):
         dep_item = Item(id='{}-dep{}'.format(phrase.id, i+1),
                         attributes={'dep':dep_link.child.id})
         if dep_link.parent:
@@ -148,7 +163,8 @@ def xigt_add_dependencies(xigt_inst: Igt, phrase: Phrase):
         if dep_link.type:
             dep_item.text = dep_link.type
         dep_tier.append(dep_item)
-    xigt_inst.append(dep_tier)
+    if dep_tier:
+        xigt_inst.append(dep_tier)
 
 
 def instance_to_xigt(inst: Instance):
@@ -157,7 +173,7 @@ def instance_to_xigt(inst: Instance):
 
     :rtype:  Igt
     """
-    EXPORT_LOG.info('Serializing instance "{}" to Xigt'.format(inst.id))
+    EXPORT_LOG.debug('Serializing instance "{}" to Xigt'.format(inst.id))
     xigt_inst = Igt(id=inst.id)
     tier_to_xigt(xigt_inst, inst.lang, LANG_KEY)
     tier_to_xigt(xigt_inst, inst.gloss, GLOSS_KEY)

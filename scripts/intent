@@ -1,32 +1,50 @@
 #!/usr/bin/env python3
+import sys
+
+from intent2.exceptions import ProcessException
+from intent2.functions import project_pos, project_dependencies
 from intent2.serialize.importers import parse_xigt_corpus
-from intent2.serialize.exporters import corpus_to_xigt, instance_to_xigt
-from intent2.functions import heuristic_alignment, project_pos, project_dependencies
+from intent2.serialize.exporters import corpus_to_xigt
+from intent2.alignment import heuristic_alignment, AlignException
 import argparse
 from xigt.codecs.xigtxml import load
 import logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig()
+
+import sys
 
 ROOT_LOGGER = logging.getLogger()
+
 
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('-i', '--input', help='inputfile', required=True)
     p.add_argument('-o', '--output', help='Output file', required=True)
-    p.add_argument('-v', '--verbose', help='Increase verbosity', action='count')
+    p.add_argument('-v', '--verbose', help='Increase verbosity', action='count', default=0)
 
     p.add_argument('--no-align', action='store_true', help="Don't perform bilingual alignment. Also disables projection.")
     p.add_argument('--no-posproject', action='store_true', help="Disable POS projection.")
     p.add_argument('--no-dsproject', action='store_true', help="Disable DS projection")
 
+    p.add_argument('--ignore-import-errors', action='store_true', default=False, help='Skip instances that cause errors on import. They will not be ingested')
+
     args = p.parse_args()
+
+    # -------------------------------------------
+    # Set logging verbosity.
+    # -------------------------------------------
+    if args.verbose == 1:
+        ROOT_LOGGER.setLevel(logging.INFO)
+    elif args.verbose >= 2:
+        ROOT_LOGGER.setLevel(logging.DEBUG)
+    # -------------------------------------------
 
     ROOT_LOGGER.info('Loading Xigt corpus from "{}"'.format(args.input))
     xc = load(args.input, 'r')
 
     ROOT_LOGGER.info('Parsing Xigt corpus into INTENT2 data structures.')
-    corp = parse_xigt_corpus(xc)
+    corp = parse_xigt_corpus(xc, ignore_import_errors=args.ignore_import_errors)
 
     ROOT_LOGGER.info('Beginning INTENT2 enrichment...')
 
@@ -38,17 +56,26 @@ if __name__ == '__main__':
         ROOT_LOGGER.info("DS Projection disabled")
 
     for inst in corp:
-        if not args.no_align:
-            heuristic_alignment(inst)
 
-        # Only try projection if there
-        # are alignments.
-        if inst.trans.alignments:
-            if not args.no_posproject:
-                project_pos(inst)
-            if not args.no_dsproject:
-                project_dependencies(inst)
+        try:
+            if not args.no_align:
+                heuristic_alignment(inst)
 
-    with open(args.output, 'w') as out_f:
-        out_f.write(corpus_to_xigt(corp))
+            # Only try projection if there
+            # are alignments.
+            if inst.trans.alignments:
+                if not args.no_posproject:
+                    project_pos(inst)
+                # if not args.no_dsproject:
+                #     project_ds(inst)
+        except AlignException as ae:
+            ROOT_LOGGER.warning('Alignment failed for instance "{}": {}'.format(inst.id, ae))
+        except ProcessException as pe:
+            ROOT_LOGGER.warning('Processing failed for instance "{}": {}'.format(inst.id, pe))
+
+    if not corp.instances:
+        ROOT_LOGGER.error("No instances found in corpus. Not writing output.")
+    else:
+        with open(args.output, 'w') as out_f:
+            out_f.write(corpus_to_xigt(corp))
 

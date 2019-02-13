@@ -4,6 +4,46 @@ import nltk
 
 from intent2.model import Phrase, SubWord, Word
 
+import logging
+STRING_LOG = logging.getLogger('string')
+
+# -------------------------------------------
+# Some String Constants
+# -------------------------------------------
+
+# Any character in this list will be considered
+# one that splits morphemes
+MORPH_SYMBOLS = ['-', '=', ':']
+MORPH_RE = '[{0}]'.format(''.join(['\\' + sym for sym in MORPH_SYMBOLS]))
+MORPH_SEG_RE = '{}|$'.format(MORPH_RE)
+
+
+class StringException(Exception): pass
+class StringSegmentationException(StringException): pass
+
+# -------------------------------------------
+
+def word_str_to_subwords(w: str):
+    """
+    Given a word string, create a subword components.
+    :param w:
+    :return:
+    """
+
+    # Iteratively look for the next morpheme break or
+    # end of string, and the
+    subwords = []
+    last_index = 0
+    for morph_position in re.finditer(MORPH_SEG_RE, w):
+        start, stop = morph_position.span()
+        morph_str = w[last_index:start]
+        morph_sep = w[start:stop]
+        sw = SubWord(morph_str, right_symbol=morph_sep if morph_sep else None)
+        subwords.append(sw)
+        last_index = stop
+    return subwords
+
+
 
 def is_character_identical(stringA, stringB, skip_re='[#,\-=\.\s]'):
     """
@@ -20,13 +60,36 @@ class CharacterIdenticalTests(unittest.TestCase):
 
         self.assertTrue(is_character_identical(lang_line, morph_line))
 
-def clean_subword_string(subword_string):
+class SubWordCreationTests(unittest.TestCase):
+    def test_clitics(self):
+        w_str = 'this=clitic'
+        subwords = [SubWord('this', right_symbol='='),
+                    SubWord('clitic')]
+        self.assertListEqual(word_str_to_subwords(w_str),
+                             subwords)
+
+def subword_str_to_subword(subword_string, id_=None):
     """
-    Remove the characters that a subword is split on.
+    Given a string representing a subword, return the
+    subword object from it.
 
     :param subword_string:
+    :return: A SubWord object, given
     """
-    return re.sub('[\-=]+', '', subword_string)
+    # Check for left and rightmost characters being
+    # morpheme segmentation.
+    original_subword = subword_string
+    left_seg, right_seg = None, None
+    if subword_string[0] in MORPH_SYMBOLS:
+        left_seg = subword_string[0]
+        subword_string = subword_string[1:]
+    if not subword_string:
+        STRING_LOG.info('Subword "{}" appears to only contain a morph separator.'.format(original_subword))
+    elif subword_string[-1] in MORPH_SYMBOLS:
+        right_seg = subword_string[-1]
+        subword_string = subword_string[:-1]
+
+    return SubWord(subword_string, left_symbol=left_seg, right_symbol=right_seg, id_=id_)
 
 def word_tokenize(phrase_string):
     """

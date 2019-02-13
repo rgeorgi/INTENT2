@@ -4,6 +4,8 @@ part-of-speech-tagging
 """
 
 import spacy
+
+from intent2.exceptions import ProcessException
 from intent2.model import Instance
 from spacy.language import Language
 global SPACY_ENG # type: Language
@@ -38,7 +40,8 @@ def process_trans(inst: Instance, tag=True, parse=True):
     :type inst: Instance
     """
     # Parsing requires a translation line
-    assert inst.trans
+    if not inst.trans:
+        raise ProcessException("No translation line present, cannot process.")
 
     spacy_eng = load_spacy()
     trans_string = spacy_eng.tokenizer.tokens_from_list([w.string for w in inst.trans])
@@ -62,10 +65,11 @@ def process_trans(inst: Instance, tag=True, parse=True):
         if parse:
             if spacy_word.head.i != i:
                 trans_word.add_head(inst.trans[spacy_word.head.i],
-                                    type=spacy_word.dep_)
+                                    link_type=spacy_word.dep_)
             # If spacy says that a word is its own head,
             # it is the root.
             else:
+                trans_word.add_head(None, link_type='root')
                 inst.trans.root = trans_word
 
         # Add vector

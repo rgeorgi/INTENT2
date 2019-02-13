@@ -108,19 +108,32 @@ class DependencyMixin(object):
     @property
     def dependency_links(self): return self._dependency_links
 
+    @dependency_links.setter
+    def dependency_links(self, val):
+        self._dependency_links = val
 
-    def add_dependent(self, dependent, type: str=None):
-        add_dependency_link(dependent, self, type=type)
+    def add_dependent(self, dependent, link_type: str = None):
+        add_dependency_link(dependent, self, link_type=link_type)
 
-    def add_head(self, head, type: str=None):
-        add_dependency_link(self, head, type=type)
+    def add_head(self, head, link_type: str = None):
+        add_dependency_link(self, head, link_type=link_type)
 
-def add_dependency_link(child, parent, type=None):
+    def find_root(self):
+        if not self.dependencies:
+            return self
+        else:
+            return next(iter(self.dependencies)).parent.find_root()
+
+
+def add_dependency_link(child: DependencyMixin,
+                        parent: DependencyMixin,
+                        link_type: str = None):
     assert isinstance(child, DependencyMixin)
-    assert isinstance(parent, DependencyMixin)
-    link = DependencyLink(child, parent, type=type)
-    child._dependency_links |= {link}
-    parent._dependency_links |= {link}
+    assert isinstance(parent, DependencyMixin) or (parent is None)
+    link = DependencyLink(child, parent, link_type=link_type)
+    child.dependency_links |= {link}
+    if parent:
+        parent.dependency_links |= {link}
 
 class StringMixin(object):
     """
@@ -176,10 +189,10 @@ class DependencyLink(object):
     def __init__(self,
                  child: DependencyMixin,
                  parent: DependencyMixin,
-                 type: str=None):
+                 link_type: str=None):
         self.child = child
         self.parent = parent
-        self.type = type
+        self.type = link_type
 
     def __repr__(self):
         return '<dep {} --> {}>'.format(self.child, self.parent)
@@ -213,7 +226,14 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTok
 
     For word-level items. Every word must contain at least one subword.
     """
-    def __init__(self, string=None, subwords=None, id=None):
+    def __init__(self, string=None, subwords=None, id_=None):
+        """
+
+        :param string:
+        :param subwords:
+        :type subwords: Iterable[SubWord]
+        :param id_:
+        """
         assert (string or subwords) and not (string and subwords)
         if string is not None:
             self._subwords = [SubWord(string, word=self, index=0)]
@@ -226,7 +246,7 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTok
                 self._subwords[i]._index = i
         self._phrase = None
         self._index = None
-        self._id = id
+        self._id = id_
 
     def __repr__(self):
         return '(w: {} [{}])'.format(', '.join([repr(sw) for sw in self.subwords]), self.index)
@@ -257,7 +277,8 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTok
     def index(self): return self._index
 
     @property
-    def hyphenated(self): return '-'.join([str(s) for s in self._subwords])
+    def hyphenated(self):
+        return ''.join([s.hyphenated for s in self._subwords])
 
     @property
     def string(self): return ''.join([str(s) for s in self._subwords])
@@ -293,10 +314,22 @@ class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMix
     """
     Class to represent sub-word level items -- either morphemes or glosses.
     """
-    def __init__(self, s, word: Word=None, index=None, id=None):
+    def __init__(self, s, word: Word=None, index=None, id_=None,
+                 left_symbol: str = None, right_symbol: str = None):
+        """
+
+        :param s: The string value of the word
+        :param word: The parent object that contains this subword
+        :param index: The index of this object within its parent
+        :param id_: A string representing this object uniquely
+        :param left_symbol: A string that combines this symbol with the token to the left (e.g. - or =)
+        :param right_symbol: A string that combines this symbol with the token to the right
+        """
         self.string = s
         self._index = index
-        self._id = id
+        self._id = id_
+        self.left_symbol = left_symbol
+        self.right_symbol = right_symbol
         if word is not None:
             self.word = word
 
@@ -314,21 +347,45 @@ class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMix
     def parts(self):
         return ((self.index, part) for part in re.split('[\./]', self.string))
 
-    def __repr__(self): return '<sw: {}>'.format(self.string)
+    @property
+    def hyphenated(self):
+        """
+        :return: A string joining the subwords with the appropriate -, =, etc. to indicate
+                 morpheme segmentation.
+        :rtype: str
+        """
+        ret_str = ''
+        if self.left_symbol:
+            ret_str += self.left_symbol
+        ret_str += self.string
+        if self.right_symbol:
+            ret_str += self.right_symbol
+        return ret_str
+
+    def __repr__(self): return '<sw: {}>'.format(self.hyphenated)
+
+    def __eq__(self, other):
+        return (self.string == other.string
+                and self.left_symbol == other.left_symbol
+                and self.right_symbol == other.right_symbol
+                and self.id == other.id)
+
+    def __hash__(self):
+        return hash(self.hyphenated + '-' + self.id)
 
 
 class Phrase(list, IdMixin):
     """
     A Phrase object contains a list of words.
     """
-    def __init__(self, iterable=None, id=None):
+    def __init__(self, iterable=None, id_=None):
         if iterable is None: iterable = []
         super().__init__(iterable)
         self._root = None
         for i, w in enumerate(self):
             w._phrase = self
             w._index = i
-        self.id = id
+        self.id = id_
 
     @property
     def root(self):
@@ -342,6 +399,10 @@ class Phrase(list, IdMixin):
         w._index = len(self)
         w._phrase = self
         self.append(w)
+
+    def append(self, w: Word):
+        w._index = len(self)
+        super().append(w)
 
     def __getitem__(self, i):
         """
@@ -376,7 +437,7 @@ class Phrase(list, IdMixin):
         return '[p: {}]'.format(', '.join([repr(s) for s in self]))
 
     @property
-    def dependencies(self):
+    def dependency_links(self):
         """
         Check all of the dependency relationships of the
         words and return a dependency parse.
@@ -385,7 +446,7 @@ class Phrase(list, IdMixin):
         """
         all_links = set([])
         for word in self:
-            all_links |= word._dependency_links
+            all_links |= word.dependency_links
         return all_links
 
     @property
@@ -454,7 +515,7 @@ class Corpus(object):
     of instances
     """
     def __init__(self, instances=None):
-        self._instances = instances if instances else None
+        self._instances = instances if instances else []
 
     def __iter__(self):
         """
@@ -488,8 +549,8 @@ class DependencyTests(unittest.TestCase):
 
     def test_dependencies(self):
         self.wordA.add_dependent(self.wordB)
-        self.assertTrue(len(self.wordA.dependencies) == 1)
-        dep = next(iter(self.wordA.dependencies))
+        self.assertTrue(len(self.wordA.dependency_links) == 1)
+        dep = next(iter(self.wordA.dependency_links))
 
         # Make sure
         self.assertTrue(dep.child == self.wordB)
@@ -499,10 +560,10 @@ class DependencyTests(unittest.TestCase):
 
         # Add one more
         self.wordA.add_dependent(self.wordC)
-        self.assertTrue(len(self.wordA.dependencies) == 2)
+        self.assertTrue(len(self.wordA.dependency_links) == 2)
 
-        depA = self.wordA.dependencies
-        depC = self.wordC.dependencies
+        depA = self.wordA.dependency_links
+        depC = self.wordC.dependency_links
 
         self.assertTrue(len(depA & depC) == 1)
 

@@ -107,7 +107,7 @@ def project_ds(inst: Instance):
 # -------------------------------------------
 
 # NOUN > VERB > ADJ > ADV > PRON > DET > ADP > CONJ > PRT > NUM > PUNC > X
-precedence = ['PROPN', 'NOUN','VERB', 'ADJ', 'ADV', 'PRON', 'DET', 'ADP', 'CONJ', 'PRT', 'NUM', 'PUNC', 'X']
+precedence = ['PROPN', 'NOUN','VERB', 'ADJ', 'ADV', 'PRON', 'DET', 'ADP', 'CONJ', 'CCONJ', 'PART', 'NUM', 'PUNC', 'X', 'INTJ']
 
 def project_pos(inst: Instance):
     """
