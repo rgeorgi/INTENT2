@@ -21,20 +21,6 @@ ENRICH_LOG = logging.getLogger('enrich')
 
 
 # -------------------------------------------
-# Dependency Parsing
-# -------------------------------------------
-class DependencySet(set):
-    """
-    Rather than representing a dependency structure
-    as a tree, just keep it as a set of links between
-    items.
-    """
-    def __new__(cls, iterable: Iterable=None, root: DependencyLink=None):
-        if iterable is None:
-            iterable = []
-        ds = cls(iterable)
-
-# -------------------------------------------
 # Dependency Projection
 # -------------------------------------------
 
@@ -67,11 +53,9 @@ def project_ds(inst: Instance):
     process_trans_if_needed(inst)
 
     # -- 1) Get the dependency structure, and remove
-    trans_ds = inst.trans.dependency_structure
+    new_ds = inst.trans.dependency_structure.copy()
     for trans_word in [tw for tw in inst.trans if not tw.alignments]:
-        trans_ds.remove_word(trans_word)
-
-    print(trans_ds.visualize())
+        new_ds.remove_word(trans_word)
 
     # -- 2) Replace all aligned words.
     for trans_word in [tw for tw in inst.trans if tw.alignments]: # type: TransWord
@@ -79,20 +63,27 @@ def project_ds(inst: Instance):
         # Iterate over the lang words for multiple alignment handling
         lang_words = trans_word.aligned_lang_words
         for lang_word in lang_words:
-            trans_ds.replace_word(trans_word, lang_word, remove=False)
-        trans_ds.remove_word(trans_word, promote=False)
+            new_ds.replace_word(trans_word, lang_word, remove=False)
+        new_ds.remove_word(trans_word, promote=False)
+
+    # Take stock of what words are aligned and unaligned at this point.
+    aligned_lang_words = [w for w in inst.lang if w in new_ds.words]
+    unaligned_lang_words = {w for w in inst.lang if w not in new_ds.words}
+    assert set(aligned_lang_words) & unaligned_lang_words == set([])
 
     # -- 3) Look for duplicate LangWords, and only keep the shallowest copy.
-    for word in trans_ds.words:
-        # Start by looking for all links where each word is the parent.
-        child_links = list(trans_ds.get_child_links(word))
-        min_depth = min([link.depth for link in child_links]) if child_links else None
+    for word in aligned_lang_words:
+
+        # Get the depth of the word in the tree (minimum number
+        # of links traversed to make it to a root)
+        child_links = list(new_ds.get_child_links(word))
+        min_depth = min([new_ds.depth(child_link) for child_link in child_links]) if child_links else None
 
         # Remove all the links that have a depth less than the min_depth.
         # TODO: What about the case when multiple copies are at the same depth?
         for child_link in child_links:
-            if child_link.depth < min_depth:
-                trans_ds.remove(child_link)
+            if new_ds.depth(child_link) < min_depth:
+                new_ds.remove(child_link)
 
     # -- 4) Reattach unaligned words.
     #       Unaligned attachment from Quirk, et. al, 2005:
@@ -106,11 +97,6 @@ def project_ds(inst: Instance):
     #          If all the nodes to the left (or right) of position j are
     #          unaligned, attach tj to the left-most (or right-most)
     #          word that is aligned.
-    print(trans_ds.visualize())
-    aligned_lang_words = [w for w in inst.lang if w in trans_ds.words]
-    unaligned_lang_words = {w for w in inst.lang if w not in trans_ds.words}
-
-    assert set(aligned_lang_words) & unaligned_lang_words == set([])
 
     # We can't reattach unaligned words if no words were attached.
     if not aligned_lang_words:
@@ -145,11 +131,11 @@ def project_ds(inst: Instance):
         make_attach_link = None
         for left_word, right_word in word_pairs:
             # If the right_word dominates the left_word... attach to the left_word
-            if right_word in {link.parent for link in trans_ds.get_parent_links(left_word)}:
+            if right_word in {link.parent for link in new_ds.get_parent_links(left_word)}:
                 make_attach_link = DependencyLink(child=left_word, parent=right_word)
                 break
             # Else, if the left word dominates the right_word... attach left_word to right_word
-            elif left_word in {link.child for link in trans_ds.get_parent_links(right_word)}:
+            elif left_word in {link.child for link in new_ds.get_parent_links(right_word)}:
                 make_attach_link = DependencyLink(child=right_word, parent=left_word)
                 break
 
@@ -158,14 +144,12 @@ def project_ds(inst: Instance):
         else:
             DS_PROJ_LOG.info('No attachment site was found for lang word "{}"'.format(unaligned_lang_word.id))
 
-        for link in links_to_add:
-            DS_PROJ_LOG.debug('Adding attachment "{}"'.format(link))
-            trans_ds.add(link)
+    for link in links_to_add:
+        DS_PROJ_LOG.debug('Adding attachment "{}"'.format(link))
+        new_ds.add(link)
 
-    # Return the dependency structure
-    return trans_ds
-
-
+    # Add the dependency structure to the language line.
+    inst.lang.dependency_structure = new_ds
 
 
 # -------------------------------------------

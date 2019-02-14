@@ -154,8 +154,9 @@ def xigt_add_dependencies(xigt_inst: Igt, phrase: Phrase):
     Given a phrase that has a dependency structure analysis,
     render it into
     """
-    dep_tier = Tier(type='dependencies', id='{}ds'.format(phrase.id))
-    for i, dep_link in enumerate(phrase.dependency_structure):
+    dep_tier = Tier(type='dependencies', id='{}-ds'.format(phrase.id))
+    for i, dep_link in enumerate(sorted(phrase.dependency_structure,
+                                        key=lambda link: link.child.index)):
         dep_item = Item(id='{}-dep{}'.format(phrase.id, i+1),
                         attributes={'dep':dep_link.child.id})
         if dep_link.parent:
@@ -180,6 +181,7 @@ def instance_to_xigt(inst: Instance):
     tier_to_xigt(xigt_inst, inst.trans, TRANS_KEY)
     xigt_add_bilingual_alignment(xigt_inst, inst.trans)
     xigt_add_dependencies(xigt_inst, inst.trans)
+    xigt_add_dependencies(xigt_inst, inst.lang)
     return xigt_inst
 
 

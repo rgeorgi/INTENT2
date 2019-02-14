@@ -233,10 +233,12 @@ def parse_lang_tier(inst, id_to_object_mapping):
     if not lang_tier:
         return Phrase(id_=LANG_WORD_ID)
 
-    return load_words(id_to_object_mapping,
-                      words_tier=lang_tier,
-                      segmentation_tier=morph_tier,
-                      WordType=LangWord)
+    p = load_words(id_to_object_mapping,
+                   words_tier=lang_tier,
+                   segmentation_tier=morph_tier,
+                   WordType=LangWord)
+    p.id = LANG_WORD_ID
+    return p
 
 
 def parse_gloss_tier(inst: Igt, id_to_object_mapping):

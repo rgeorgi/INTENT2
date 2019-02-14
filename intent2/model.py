@@ -83,6 +83,7 @@ class DependencyStructure(set):
         """
         :type links: Iterable[DependencyLink]
         """
+        links = [] if links is None else links
         self._head_map = defaultdict(set)
         self._child_map = defaultdict(set)
         self._roots = set([]) # type: set[Word]
@@ -94,6 +95,17 @@ class DependencyStructure(set):
         """:rtype: DependencyLink"""
         return super().__iter__()
 
+    def copy(self):
+        """
+        :rtype: DependencyStructure
+        """
+        new_ds = DependencyStructure()
+        for old_link in self: # type: DependencyLink
+            new_ds.add(DependencyLink(child=old_link.child,
+                                      parent=old_link.parent,
+                                      link_type=old_link.type))
+        return new_ds
+
     def add(self, link):
         """
         :type link: DependencyLink
@@ -104,6 +116,24 @@ class DependencyStructure(set):
     def remove(self, link):
         super().remove(link)
         self._remove_extra(link)
+
+    @property
+    def roots(self):
+        """:rtype: set[Word]"""
+        return self._roots
+
+    def depth(self, link):
+        """
+        Return the number of links between this link and a root.
+
+        :type link: DependencyLink
+        :rtype: int
+        """
+        if link.parent is None:
+            return 0
+        else:
+            return min([self.depth(parent_link) for parent_link in self.get_parent_links(link.parent)]) + 1
+
 
     def remove_word(self, word, promote=True):
         """
@@ -155,7 +185,7 @@ class DependencyStructure(set):
         self._child_map[link.child].add(link)
         self._head_map[link.parent].add(link)
         if link.parent is None:
-            self._roots.add(link)
+            self._roots.add(link.child)
         else:
             self._words.add(link.parent)
         self._words.add(link.child)
@@ -164,7 +194,7 @@ class DependencyStructure(set):
         self._child_map[link.child].remove(link)
         self._head_map[link.parent].remove(link)
         if link.parent is None:
-            self._roots.remove(link)
+            self._roots.remove(link.child)
 
         if not (self._child_map[link.child] or self._head_map[link.child]):
             self._words -= set([link.child])
@@ -221,66 +251,20 @@ class DependencyStructure(set):
 
 class DependencyMixin(object):
     """
-    A mixin for items that can have POS dependencies.
+    A mixin for items that can have dependency structures.
 
-    Dependents are children (items with incoming edges to this item)
-    Dependency is the item this item has an outgoing edge to
+    (This is defined to just be a phrase)
     """
-    @property
-    def _dependency_links(self):
-        """
-        :rtype: set[DependencyLink]
-        """
-        return getattr(self, '_dependencies', set([]))
-
-    @_dependency_links.setter
-    def _dependency_links(self, val): setattr(self, '_dependencies', val)
 
     @property
-    def dependencies(self):
-        """
-        Return the set of dependency links in which this item is the child.
-        :rtype: set[DependencyLink]
-        """
-        return {d for d in self._dependency_links if d.child == self}
+    def dependency_structure(self):
+        """:rtype: DependencyStructure"""
+        return getattr(self, '_ds')
 
-    @property
-    def dependents(self):
-        """
-        Return the set of dependency links in which this item is the parent.
-        :rtype: set[DependencyLink]
-        """
-        return {d for d in self._dependency_links if d.parent == self}
+    @dependency_structure.setter
+    def dependency_structure(self, val):
+        setattr(self, '_ds', val)
 
-    @property
-    def dependency_links(self): return self._dependency_links
-
-    @dependency_links.setter
-    def dependency_links(self, val):
-        self._dependency_links = val
-
-    def add_dependent(self, dependent, link_type: str = None):
-        add_dependency_link(dependent, self, link_type=link_type)
-
-    def add_head(self, head, link_type: str = None):
-        add_dependency_link(self, head, link_type=link_type)
-
-    def find_root(self):
-        if not self.dependencies:
-            return self
-        else:
-            return next(iter(self.dependencies)).parent.find_root()
-
-
-def add_dependency_link(child: DependencyMixin,
-                        parent: DependencyMixin,
-                        link_type: str = None):
-    assert isinstance(child, DependencyMixin)
-    assert isinstance(parent, DependencyMixin) or (parent is None)
-    link = DependencyLink(child, parent, link_type=link_type)
-    child.dependency_links |= {link}
-    if parent:
-        parent.dependency_links |= {link}
 
 class StringMixin(object):
     """
@@ -333,10 +317,12 @@ class SpacyTokenMixin(object):
 # Structures
 # -------------------------------------------
 class DependencyLink(object):
-    def __init__(self,
-                 child: DependencyMixin,
-                 parent: DependencyMixin,
+    def __init__(self, child=None, parent=None,
                  link_type: str=None):
+        """
+        :type child: Word
+        :type parent: Word
+        """
         self.child = child
         self.parent = parent
         self.type = link_type
@@ -351,38 +337,12 @@ class DependencyLink(object):
     def __hash__(self):
         return hash((self.child, self.parent, self.type))
 
-    def promote(self):
-        """
-        Return the list of links that would result from
-        deleting the parent of this link and promoting
-        its children.
+    def __eq__(self, other):
+        return (self.child == other.child
+                and self.parent == other.parent
+                and self.type == other.type)
 
-        Note that this set makes no assumption about
-        multiple parents. This set will likely be size 1,
-        but if multiple parents exist it might be longer.
 
-        :rtype: set[DependencyLink]
-        """
-        new_links = set([])
-        for parent_link in self.parent.dependencies:
-            new_link = DependencyLink(child=self.child,
-                                      parent=parent_link.parent,
-                                      link_type=self.type)
-            new_links.add(new_link)
-        return new_links
-
-    @property
-    def depth(self):
-        """
-        Follow this link through its parents until it finds a root, and return
-        how many steps that took
-        """
-        if self.parent is None:
-            return 0
-        elif not self.parent.dependencies:
-            return 1
-        else:
-            return min([link.depth for link in self.parent.dependencies]) + 1
 
 
 # -------------------------------------------
@@ -570,7 +530,7 @@ class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMix
         return hash(self.hyphenated + '-' + self.id)
 
 
-class Phrase(list, IdMixin):
+class Phrase(list, IdMixin, DependencyMixin):
     """
     A Phrase object contains a list of words.
     """
@@ -623,19 +583,6 @@ class Phrase(list, IdMixin):
 
     def __repr__(self):
         return '[p: {}]'.format(', '.join([repr(s) for s in self]))
-
-    @property
-    def dependency_structure(self):
-        """
-        Check all of the dependency relationships of the
-        words and return a dependency parse.
-
-        :rtype: DependencyStructure
-        """
-        all_links = set([])
-        for word in self:
-            all_links |= word.dependency_links
-        return DependencyStructure(all_links)
 
     @property
     def subwords(self):

@@ -6,7 +6,7 @@ part-of-speech-tagging
 import spacy
 
 from intent2.exceptions import ProcessException
-from intent2.model import Instance
+from intent2.model import Instance, DependencyStructure, DependencyLink
 from spacy.language import Language
 global SPACY_ENG # type: Language
 SPACY_ENG = None
@@ -53,6 +53,9 @@ def process_trans(inst: Instance, tag=True, parse=True):
 
     # Now let's go through the words, and assign attributes to them.
     assert len(inst.trans) == len(trans_string)
+
+    trans_ds = DependencyStructure()
+
     for i in range(len(inst.trans)):
         trans_word = inst.trans[i]
         spacy_word = trans_string[i] # type: Token
@@ -64,13 +67,16 @@ def process_trans(inst: Instance, tag=True, parse=True):
         # Add Dependency Head
         if parse:
             if spacy_word.head.i != i:
-                trans_word.add_head(inst.trans[spacy_word.head.i],
-                                    link_type=spacy_word.dep_)
+                trans_ds.add(DependencyLink(child=trans_word,
+                                            parent=inst.trans[spacy_word.head.i],
+                                            link_type=spacy_word.dep_))
+
             # If spacy says that a word is its own head,
             # it is the root.
             else:
-                trans_word.add_head(None, link_type='root')
-                inst.trans.root = trans_word
+                trans_ds.add(DependencyLink(child=trans_word,
+                                            parent=None,
+                                            link_type='root'))
 
         # Add vector
         trans_word.spacy_token = spacy_word
@@ -80,6 +86,7 @@ def process_trans(inst: Instance, tag=True, parse=True):
         trans_word[0].lemma = spacy_word.lemma_
         # TODO: Should there be a case where a translation word has more than one subword?
 
+    inst.trans.dependency_structure = trans_ds
     setattr(inst.trans, '_processed', True)
 
 
