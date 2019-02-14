@@ -3,6 +3,7 @@ import unittest
 from collections import defaultdict
 from typing import Generator, Iterable, Iterator, Union
 
+class DependencyException(Exception): pass
 
 
 
@@ -122,17 +123,25 @@ class DependencyStructure(set):
         """:rtype: set[Word]"""
         return self._roots
 
-    def depth(self, link):
+    def depth(self, link, seen_links = None):
         """
         Return the number of links between this link and a root.
 
         :type link: DependencyLink
         :rtype: int
         """
+        if seen_links is None:
+            seen_links = set([])
         if link.parent is None:
             return 0
         else:
-            return min([self.depth(parent_link) for parent_link in self.get_parent_links(link.parent)]) + 1
+            parent_links = self.get_parent_links(link.parent)
+            filtered_links = {parent_link for parent_link in parent_links if parent_link not in seen_links}
+            if not filtered_links:
+                raise DependencyException('Cycle found for link "{}"'.format(link))
+            else:
+                return min({self.depth(parent_link, seen_links=seen_links | parent_links)
+                            for parent_link in filtered_links}) + 1
 
 
     def remove_word(self, word, promote=True):
@@ -259,7 +268,7 @@ class DependencyMixin(object):
     @property
     def dependency_structure(self):
         """:rtype: DependencyStructure"""
-        return getattr(self, '_ds')
+        return getattr(self, '_ds', None)
 
     @dependency_structure.setter
     def dependency_structure(self, val):

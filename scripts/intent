@@ -3,6 +3,7 @@ import sys
 
 from intent2.exceptions import ProcessException
 from intent2.functions import project_pos, project_ds
+from intent2.model import DependencyException
 from intent2.serialize.importers import parse_xigt_corpus
 from intent2.serialize.exporters import corpus_to_xigt
 from intent2.alignment import heuristic_alignment, AlignException
@@ -67,7 +68,10 @@ if __name__ == '__main__':
                 if not args.no_posproject:
                     project_pos(inst)
                 if not args.no_dsproject:
-                    project_ds(inst)
+                    try:
+                        project_ds(inst)
+                    except DependencyException as de:
+                        ROOT_LOGGER.error('Error in projecting dependency for instance "{}": {}'.format(inst.id, de))
         except AlignException as ae:
             ROOT_LOGGER.warning('Alignment failed for instance "{}": {}'.format(inst.id, ae))
         except ProcessException as pe:
