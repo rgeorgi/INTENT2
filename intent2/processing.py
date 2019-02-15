@@ -7,7 +7,10 @@ import spacy
 
 from intent2.exceptions import ProcessException
 from intent2.model import Instance, DependencyStructure, DependencyLink
+
 from spacy.language import Language
+from spacy.tokens import Doc
+
 global SPACY_ENG # type: Language
 SPACY_ENG = None
 
@@ -44,21 +47,22 @@ def process_trans(inst: Instance, tag=True, parse=True):
         raise ProcessException("No translation line present, cannot process.")
 
     spacy_eng = load_spacy()
-    trans_string = spacy_eng.tokenizer.tokens_from_list([w.string for w in inst.trans])
+
+    trans_doc = Doc(spacy_eng.vocab, words=[w.string for w in inst.trans])
 
     # Tag and parse
     PROCESS_LOG.info('Tagging and parsing translation line "{}"'.format(inst.trans.hyphenated))
-    spacy_eng.tagger(trans_string)
-    spacy_eng.parser(trans_string)
+    spacy_eng.tagger(trans_doc)
+    spacy_eng.parser(trans_doc)
 
     # Now let's go through the words, and assign attributes to them.
-    assert len(inst.trans) == len(trans_string)
+    assert len(inst.trans) == len(trans_doc)
 
     trans_ds = DependencyStructure()
 
     for i in range(len(inst.trans)):
         trans_word = inst.trans[i]
-        spacy_word = trans_string[i] # type: Token
+        spacy_word = trans_doc[i] # type: Token
 
         # Add POS Tag
         if tag:

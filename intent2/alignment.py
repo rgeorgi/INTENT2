@@ -230,6 +230,8 @@ def heuristic_alignment(inst: Instance, heur_list = None):
         gloss_m = inst.gloss[gloss_index]
         trans_w.add_alignment(gloss_m)
 
+    return existing_alignments
+
 
 def get_alignment_words(alignments: List[Tuple[int, float]]):
     return {word_index for word_index, gloss_index in alignments}

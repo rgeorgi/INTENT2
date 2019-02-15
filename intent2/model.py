@@ -510,7 +510,10 @@ class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMix
 
     @property
     def parts(self):
-        return ((self.index, part) for part in re.split('[\./]', self.string))
+        """
+        Return the period-or-slash-delineated portions of a sub-word.
+        """
+        return ((self.index, part) for part in re.split('[\./]', self.string) if part)
 
     @property
     def hyphenated(self):
@@ -653,28 +656,19 @@ class Instance(IdMixin):
     def __repr__(self):
         return '<IGT Instance with {} words>'.format(len(self.lang))
 
-class Corpus(object):
+class Corpus(list):
     """
     Class for holding a collection
     of instances
     """
     def __init__(self, instances=None):
-        self._instances = instances if instances else []
+        super().__init__(instances)
 
     def __iter__(self):
         """
         :rtype: Iterator[Instance]
         """
-        return self._instances.__iter__()
-
-    @property
-    def instances(self):
-        """:rtype: list[Instance]"""
-        return self._instances
-
-    def __getitem__(self, item):
-        """:rtype: Instance"""
-        return self._instances[item]
+        return super().__iter__()
 
 
 # -------------------------------------------

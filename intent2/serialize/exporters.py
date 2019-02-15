@@ -1,4 +1,4 @@
-from intent2.model import Instance, Corpus, Phrase, IdMixin, Word, SubWord
+from intent2.model import Instance, Corpus, Phrase, IdMixin, Word, SubWord, TransWord
 from xigt.model import XigtCorpus, Igt, Tier, Item
 from xigt.codecs.xigtxml import dumps
 from typing import Iterable, Tuple, Union, List
@@ -14,7 +14,7 @@ def corpus_to_xigt(corp: Corpus):
     """
     xc = XigtCorpus()
     EXPORT_LOG.info('Preparing to export INTENT2 Coprus to Xigt')
-    for inst in corp.instances:
+    for inst in corp:
         xigt_inst = instance_to_xigt(inst)
         try:
             dumps(XigtCorpus(igts=[xigt_inst]))
@@ -133,21 +133,31 @@ def xigt_add_bilingual_alignment(xigt_inst: Igt, trans: Phrase):
     to a bilingual-alignments tier.
     """
 
-    bilingual_aln_tier = Tier(id='a', type='bilingual-alignments',
-                              attributes={'source': 'tw', 'target': 'g'})
-    aln_num = 0
-    for t_w in trans:
-        for aligned_gloss in t_w.alignments:
+    tw_to_g_tier = Tier(id='a1', type='bilingual-alignments',
+                        attributes={'source': TRANS_WORD_ID,
+                                    'target': GLOSS_SUBWORD_ID})
+    tw_to_lw_tier = Tier(id='a2', type='bilingual-alignments',
+                         attributes={'source': TRANS_WORD_ID,
+                                     'target': LANG_WORD_ID})
+    for t_w in trans: # type: TransWord
+        for aligned_gloss in [item for item in t_w.alignments if isinstance(item, SubWord)]:
 
-            aln_item = Item(id='a{}'.format(aln_num+1),
+            aln_item = Item(id='a{}'.format(len(tw_to_g_tier) + 1),
                             attributes={'source': t_w.id,
                                         'target': aligned_gloss.id})
-            bilingual_aln_tier.append(aln_item)
-            aln_num += 1
+            tw_to_g_tier.append(aln_item)
+
+        for l_w in t_w.aligned_lang_words:
+            tw_lw_item = Item(id='a{}'.format(len(tw_to_lw_tier) + 1),
+                              attributes={'source':t_w.id,
+                                          'target':l_w.id})
+            tw_to_lw_tier.append(tw_lw_item)
 
     # Only append if it's not empty.
-    if bilingual_aln_tier:
-        xigt_inst.append(bilingual_aln_tier)
+    if tw_to_g_tier:
+        xigt_inst.append(tw_to_g_tier)
+    if tw_to_lw_tier:
+        xigt_inst.append(tw_to_lw_tier)
 
 def xigt_add_dependencies(xigt_inst: Igt, phrase: Phrase):
     """

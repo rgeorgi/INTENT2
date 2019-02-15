@@ -41,3 +41,6 @@ def get_xigt_str(key_sequence: List[str]):
     return d
 
 LANG_WORD_ID = get_xigt_str([LANG_KEY, WORDS_KEY, ID_KEY])
+TRANS_WORD_ID = get_xigt_str([TRANS_KEY, WORDS_KEY, ID_KEY])
+
+GLOSS_SUBWORD_ID = get_xigt_str([GLOSS_KEY, SUBWORDS_KEY, ID_KEY])

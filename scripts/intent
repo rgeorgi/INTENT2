@@ -56,30 +56,44 @@ if __name__ == '__main__':
     if args.no_dsproject:
         ROOT_LOGGER.info("DS Projection disabled")
 
+    align_count = 0
+    pos_project_count = 0
+    ds_project_count = 0
+
     for inst in corp:
 
         try:
             if not args.no_align:
-                heuristic_alignment(inst)
+                alignments = heuristic_alignment(inst)
+                if alignments:
+                    align_count += 1
 
             # Only try projection if there
             # are alignments.
             if inst.trans.alignments:
                 if not args.no_posproject:
                     project_pos(inst)
+                    pos_project_count += 1
                 if not args.no_dsproject:
-                    try:
-                        project_ds(inst)
-                    except DependencyException as de:
-                        ROOT_LOGGER.error('Error in projecting dependency for instance "{}": {}'.format(inst.id, de))
+                    project_ds(inst)
+                    ds_project_count += 1
+
         except AlignException as ae:
             ROOT_LOGGER.warning('Alignment failed for instance "{}": {}'.format(inst.id, ae))
         except ProcessException as pe:
             ROOT_LOGGER.warning('Processing failed for instance "{}": {}'.format(inst.id, pe))
+        except DependencyException as de:
+            ROOT_LOGGER.warning('Error in projecting dependency for instance "{}": {}'.format(inst.id, de))
 
-    if not corp.instances:
+    if not corp:
         ROOT_LOGGER.error("No instances found in corpus. Not writing output.")
     else:
+        print("Processing complete.")
+        print("\t{} instances.".format(len(corp)))
+        print("\t{} instances aligned.".format(align_count))
+        print("\t{} instances POS projected.".format(pos_project_count))
+        print("\t{} instances ds projected.".format(ds_project_count))
+        print("Preparing to write output.")
         with open(args.output, 'w') as out_f:
             out_f.write(corpus_to_xigt(corp))
 
