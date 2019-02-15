@@ -1,4 +1,6 @@
 from intent2.model import Instance, Corpus, Phrase, IdMixin, Word, SubWord, TransWord
+
+from xigt.errors import XigtError
 from xigt.model import XigtCorpus, Igt, Tier, Item
 from xigt.codecs.xigtxml import dumps
 from typing import Iterable, Tuple, Union, List
@@ -19,9 +21,8 @@ def corpus_to_xigt(corp: Corpus):
         try:
             dumps(XigtCorpus(igts=[xigt_inst]))
             xc.append(xigt_inst)
-        except TypeError as te:
+        except (TypeError, XigtError) as te:
             EXPORT_LOG.error('Error in serializing instance "{}": {}'.format(inst.id, te))
-            raise te
     EXPORT_LOG.info('Corpus successfully converted. Returning string for writing.')
     return dumps(xc)
 
