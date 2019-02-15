@@ -286,10 +286,10 @@ def create_phrase_from_words_tier(tier: xigt.model.Tier,
     def word_func(xigt_word_item):
         if do_segmentation:
             w = WordType(subwords=word_str_to_subwords(xigt_word_item.value()),
-                         id=xigt_word_item.id)
+                         id_=xigt_word_item.id)
         else:
             w = WordType(xigt_word_item.value(),
-                         id=xigt_word_item.id)
+                         id_=xigt_word_item.id)
         return w
 
     return Phrase([word_func(xw) for xw in tier])
@@ -450,12 +450,13 @@ def load_words(id_to_object_mapping,
         prev_sw = None
         for xigt_word_item in words_tier:  # type: xigt.model.Item
             morph_segments = [morph for morph in segmentation_tier
-                              if morph.segmentation == xigt_word_item.id]
+                              if xigt_word_item.id in xigt.ref.ids(morph.segmentation)]
 
             # If the segmentation tier is provided,
             # we assume that every word has some form
             # of segmentation.
             if not morph_segments:
+                pass
                 raise SegmentationTierException('Segmentation tier provided for instance "{}", but no segments for word "{}"'.format(words_tier.igt.id,
 
                                                                                                                    xigt_word_item.id))
