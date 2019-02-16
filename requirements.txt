@@ -3,3 +3,5 @@ nltk==3.4
 spacy==2.0.18
 https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-2.0.0/en_core_web_lg-2.0.0.tar.gz#en_core_web_lg
 termcolor==1.1.0
+graphviz==0.10.1
+matplotlib==3.0.2

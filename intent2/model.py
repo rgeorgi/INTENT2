@@ -1,7 +1,7 @@
 import re
 import unittest
 from collections import defaultdict
-from typing import Generator, Iterable, Iterator, Union
+from typing import Generator, Iterable, Iterator, Union, ByteString
 
 class DependencyException(Exception): pass
 
@@ -256,29 +256,64 @@ class DependencyStructure(set):
         return '[{}]'.format(', '.join(visualize_word(word) for word in self.words))
 
 
-    def draw(self, name=''):
-        from graphviz import Digraph
+    def draw(self):
+        """
+        Draw the dependency structure as a directed graph.
 
-        dot = Digraph(engine='neato')
-        dot.node('_root_', label='ROOT', shape='box', pos='0,3')
+        Returns the PNG data ready to be visualized or saved.
+        :rtype: ByteString
+        """
+        import graphviz
+
+        dot = graphviz.Digraph(engine='dot')
+
+        dot.node('_root_', label='ROOT', shape='box')
+
         for word in self.words:
-            dot.node(word.id, label='{} ({})'.format(word.string, word.id),
-                     pos='{},0!'.format(word.index))
+            dot.node(word.id, label='{} ({})'.format(word.string, word.id))
 
         for link in self: # type: DependencyLink
             if link.parent is None:
-                dot.edge(link.child.id, '_root_', label='ROOT')
+                dot.edge(link.child.id, '_root_', xlabel='ROOT')
             else:
                 dot.edge(link.child.id, link.parent.id,
-                         label=link.type, constraint='false', fillcolor='blue')
+                         xlabel=link.type,
+                         fillcolor='blue')
 
 
-        dot.attr(overlap='false', splines='curved', sep='5', esep='3')
+        dot.attr(overlap='false', splines='curved')
 
-        # dot.attr(esep='20')
-        # dot.attr(splines='true')
+        dot.attr(rankdir='BT')
+        png = dot.pipe(format='png')
+        return png
 
-        dot.render('/tmp/{}'.format(name))
+    def show(self):
+        """
+        Draw the dependency structure as a PNG and then display it.
+
+        :return:
+        """
+        png = self.draw()
+        display_png(png)
+
+    def save_png(self, filename):
+        """
+        Draw the dependency structure as a PNG and save it to the specified filename.
+
+        :param filename:
+        :return:
+        """
+        with open(filename, 'wb') as img_f:
+            img_f.write(self.draw())
+
+def display_png(png_data):
+    from PIL import Image
+    from io import BytesIO
+
+    # Drawa the png
+    bi = BytesIO(png_data)
+    img = Image.open(bi)
+    img.show()
 
 
 

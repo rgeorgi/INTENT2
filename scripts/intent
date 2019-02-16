@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 
 from intent2.exceptions import ProcessException
@@ -29,6 +30,8 @@ if __name__ == '__main__':
     p.add_argument('--no-dsproject', action='store_true', help="Disable DS projection")
 
     p.add_argument('--ignore-import-errors', action='store_true', default=False, help='Skip instances that cause errors on import. They will not be ingested')
+    p.add_argument('--ds-pngs', default=None, help='Directory to store dependency structure PNGs for debugging')
+    p.add_argument('--ds-thresh', default=0.0, type=float, help='Threshold')
 
     args = p.parse_args()
 
@@ -75,8 +78,22 @@ if __name__ == '__main__':
                     project_pos(inst)
                     pos_project_count += 1
                 if not args.no_dsproject:
-                    project_ds(inst)
+                    new_ds = project_ds(inst)
                     ds_project_count += 1
+
+            # Attempt to save dependency structures
+            # into the specified directory.
+            if args.ds_pngs:
+                os.makedirs(args.ds_pngs, exist_ok=True)
+                if inst.trans and inst.trans.dependency_structure:
+                    trans_ds_filename = '{}_trans_ds.png'.format(inst.id)
+                    trans_ds_path = os.path.join(args.ds_pngs, trans_ds_filename)
+                    inst.trans.dependency_structure.save_png(trans_ds_path)
+                if inst.lang and inst.lang.dependency_structure:
+                    lang_ds_filename = '{}_lang_ds.png'.format(inst.id)
+                    lang_ds_path = os.path.join(args.ds_pngs, lang_ds_filename)
+                    inst.lang.dependency_structure.save_png(lang_ds_path)
+
 
         except AlignException as ae:
             ROOT_LOGGER.warning('Alignment failed for instance "{}": {}'.format(inst.id, ae))

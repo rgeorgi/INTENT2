@@ -26,6 +26,7 @@ ENRICH_LOG = logging.getLogger('enrich')
 
 DS_PROJ_LOG = logging.getLogger('ds_project')
 
+
 def project_ds(inst: Instance):
     """
     1. Our DS projection algorithm is similar to the projection algorithms
@@ -52,7 +53,7 @@ def project_ds(inst: Instance):
     # -- 0) Start by ensuring the translation line has a ds.
     process_trans_if_needed(inst)
 
-    # -- 1) Get the dependency structure, and remove
+    # -- 1) Get the dependency structure, anc create a copy.
     new_ds = inst.trans.dependency_structure.copy()
     for trans_word in [tw for tw in inst.trans if not tw.alignments]:
         new_ds.remove_word(trans_word)
@@ -76,14 +77,14 @@ def project_ds(inst: Instance):
 
         # Get the depth of the word in the tree (minimum number
         # of links traversed to make it to a root)
-        child_links = list(new_ds.get_child_links(word))
-        min_depth = min([new_ds.depth(child_link) for child_link in child_links]) if child_links else None
+        parent_links = list(new_ds.get_parent_links(word))
+        min_depth = min([new_ds.depth(parent_link) for parent_link in parent_links]) if parent_links else None
 
         # Remove all the links that have a depth less than the min_depth.
         # TODO: What about the case when multiple copies are at the same depth?
-        for child_link in child_links:
-            if new_ds.depth(child_link) < min_depth:
-                new_ds.remove(child_link)
+        for parent_link in parent_links:
+            if new_ds.depth(parent_link) > min_depth:
+                new_ds.remove(parent_link)
 
     # -- 4) Reattach unaligned words.
     #       Unaligned attachment from Quirk, et. al, 2005:
@@ -104,6 +105,9 @@ def project_ds(inst: Instance):
         return
 
     links_to_add = set([])
+
+    # TODO: Also need to consider the case where there is a word to the left and a word to the right…
+    #       …but they are both aligned to ROOT.
     for unaligned_lang_word in unaligned_lang_words: # type: Word
         search_str = '{} ({})'.format(unaligned_lang_word.string, unaligned_lang_word.id)
         DS_PROJ_LOG.debug('Searching to reattach unaligned lang word: "{}"'.format(search_str))
@@ -162,6 +166,7 @@ def project_ds(inst: Instance):
 
     # Add the dependency structure to the language line.
     inst.lang.dependency_structure = new_ds
+    return new_ds
 
 
 # -------------------------------------------
