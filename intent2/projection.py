@@ -105,6 +105,9 @@ def project_ds(inst: Instance):
 
     links_to_add = set([])
     for unaligned_lang_word in unaligned_lang_words: # type: Word
+        search_str = '{} ({})'.format(unaligned_lang_word.string, unaligned_lang_word.id)
+        DS_PROJ_LOG.debug('Searching to reattach unaligned lang word: "{}"'.format(search_str))
+
         word_index = unaligned_lang_word.index
         closest_aligned_left_words = [lw for lw in aligned_lang_words if lw.index < word_index]
         closest_aligned_left_words.reverse()  # Reverse this so the first element is the closest
@@ -112,10 +115,18 @@ def project_ds(inst: Instance):
 
         # If no words are aligned to the right, attach to the closest word on the left.
         # If no words are aligned to the left, attach to the closest word on the right.
-        if not closest_aligned_right_words:
-            links_to_add.add(DependencyLink(child=unaligned_lang_word, parent=closest_aligned_left_words[0]))
-        if not closest_aligned_left_words:
+        if not closest_aligned_right_words and closest_aligned_left_words:
+            closest_left_word = closest_aligned_left_words[0]
+            links_to_add.add(DependencyLink(child=unaligned_lang_word, parent=closest_left_word))
+            DS_PROJ_LOG.debug('No aligned words to the right of {} found, attaching to {}'.format(search_str, closest_left_word.id))
+            continue
+        if not closest_aligned_left_words and closest_aligned_right_words:
             links_to_add.add(DependencyLink(child=unaligned_lang_word, parent=closest_aligned_right_words[0]))
+            DS_PROJ_LOG.debug('No aligned words to the right of {} found, attaching to {}'.format(search_str, closest_aligned_right_words[0].id))
+            continue
+
+        assert (closest_aligned_right_words or closest_aligned_left_words)
+
 
         # If there are words attached to both the left and right, iterate
         # through to find the closest pair that depend on each other,
@@ -132,20 +143,21 @@ def project_ds(inst: Instance):
         for left_word, right_word in word_pairs:
             # If the right_word dominates the left_word... attach to the left_word
             if right_word in {link.parent for link in new_ds.get_parent_links(left_word)}:
-                make_attach_link = DependencyLink(child=left_word, parent=right_word)
+                make_attach_link = DependencyLink(child=unaligned_lang_word, parent=right_word)
                 break
-            # Else, if the left word dominates the right_word... attach left_word to right_word
+            # Else, if the left word dominates the right_word... attach right_word
             elif left_word in {link.child for link in new_ds.get_parent_links(right_word)}:
-                make_attach_link = DependencyLink(child=right_word, parent=left_word)
+                make_attach_link = DependencyLink(child=unaligned_lang_word, parent=left_word)
                 break
 
         if make_attach_link is not None:
             links_to_add.add(make_attach_link)
+            DS_PROJ_LOG.info('Reattaching unaligned word {} to {}'.format(search_str, make_attach_link.parent.id))
         else:
             DS_PROJ_LOG.info('No attachment site was found for lang word "{}"'.format(unaligned_lang_word.id))
+            DS_PROJ_LOG.info('Options were: {}'.format(word_pairs))
 
     for link in links_to_add:
-        DS_PROJ_LOG.debug('Adding attachment "{}"'.format(link))
         new_ds.add(link)
 
     # Add the dependency structure to the language line.
@@ -194,3 +206,10 @@ def combine_subword_tags(p: Phrase):
 
 
 
+# -------------------------------------------
+# UnitTests
+# -------------------------------------------
+from unittest import TestCase
+
+class DSProjectionTests(TestCase):
+    pass

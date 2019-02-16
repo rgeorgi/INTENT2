@@ -2,7 +2,7 @@
 import sys
 
 from intent2.exceptions import ProcessException
-from intent2.functions import project_pos, project_ds
+from intent2.projection import project_pos, project_ds
 from intent2.model import DependencyException
 from intent2.serialize.importers import parse_xigt_corpus
 from intent2.serialize.exporters import corpus_to_xigt

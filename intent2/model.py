@@ -256,6 +256,30 @@ class DependencyStructure(set):
         return '[{}]'.format(', '.join(visualize_word(word) for word in self.words))
 
 
+    def draw(self, name=''):
+        from graphviz import Digraph
+
+        dot = Digraph(engine='neato')
+        dot.node('_root_', label='ROOT', shape='box', pos='0,3')
+        for word in self.words:
+            dot.node(word.id, label='{} ({})'.format(word.string, word.id),
+                     pos='{},0!'.format(word.index))
+
+        for link in self: # type: DependencyLink
+            if link.parent is None:
+                dot.edge(link.child.id, '_root_', label='ROOT')
+            else:
+                dot.edge(link.child.id, link.parent.id,
+                         label=link.type, constraint='false', fillcolor='blue')
+
+
+        dot.attr(overlap='false', splines='curved', sep='5', esep='3')
+
+        # dot.attr(esep='20')
+        # dot.attr(splines='true')
+
+        dot.render('/tmp/{}'.format(name))
+
 
 
 class DependencyMixin(object):
