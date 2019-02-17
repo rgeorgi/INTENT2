@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import os
 import sys
+from collections import defaultdict
 
+from intent2.eval import eval_bilingual_alignments, print_aln_eval
 from intent2.exceptions import ProcessException
-from intent2.projection import project_pos, project_ds
+from intent2.projection import project_pos, project_ds, clear_bilingual_alignments
 from intent2.model import DependencyException
 from intent2.serialize.importers import parse_xigt_corpus
 from intent2.serialize.exporters import corpus_to_xigt
@@ -13,7 +15,7 @@ from xigt.codecs.xigtxml import load
 import logging
 logging.basicConfig()
 
-import sys
+from copy import deepcopy, copy
 
 ROOT_LOGGER = logging.getLogger()
 
@@ -63,13 +65,24 @@ if __name__ == '__main__':
     pos_project_count = 0
     ds_project_count = 0
 
+    # Counters for alignment eval.
+    aln_eval = defaultdict(int)
+
     for inst in corp:
+
+        old_alignments = inst.trans.alignments
 
         try:
             if not args.no_align:
+                # Remove old alignments!
+                clear_bilingual_alignments(inst)
                 alignments = heuristic_alignment(inst)
                 if alignments:
                     align_count += 1
+
+            if old_alignments and inst.trans.alignments:
+                eval_bilingual_alignments(inst, old_alignments, aln_eval)
+
 
             # Only try projection if there
             # are alignments.
@@ -80,6 +93,9 @@ if __name__ == '__main__':
                 if not args.no_dsproject:
                     new_ds = project_ds(inst)
                     ds_project_count += 1
+
+
+
 
             # Attempt to save dependency structures
             # into the specified directory.
@@ -93,6 +109,8 @@ if __name__ == '__main__':
                     lang_ds_filename = '{}_lang_ds.png'.format(inst.id)
                     lang_ds_path = os.path.join(args.ds_pngs, lang_ds_filename)
                     inst.lang.dependency_structure.save_png(lang_ds_path)
+
+
 
 
         except AlignException as ae:
@@ -110,6 +128,10 @@ if __name__ == '__main__':
         print("\t{} instances aligned.".format(align_count))
         print("\t{} instances POS projected.".format(pos_project_count))
         print("\t{} instances ds projected.".format(ds_project_count))
+
+        if aln_eval:
+            print_aln_eval(aln_eval)
+
         print("Preparing to write output.")
         with open(args.output, 'w') as out_f:
             out_f.write(corpus_to_xigt(corp))
