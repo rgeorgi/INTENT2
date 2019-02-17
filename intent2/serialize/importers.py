@@ -727,7 +727,9 @@ def parse_xigt_instance(xigt_inst: Igt):
         """
         phrase = func(xigt_inst, id_to_object_mapping)
         if not phrase:
-            return parse_odin(xigt_inst, odin_tag, WordType, word_id_base, subword_id_base)
+            phrase = parse_odin(xigt_inst, odin_tag, WordType, word_id_base, subword_id_base)
+
+        phrase.id = word_id_base
         return phrase
 
 

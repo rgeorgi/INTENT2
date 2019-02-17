@@ -493,7 +493,24 @@ class Word(TaggableMixin, AlignableMixin, VectorMixin, SpacyTokenMixin, IdMixin)
 
     @property
     def hyphenated(self):
-        return ''.join([s.hyphenated for s in self._subwords])
+        """
+        Return this word with morpheme delineations.
+
+        If segmentation was provided, but not morpheme delineation characters,
+        default to hyphens between the segments.
+
+        :rtype: str
+        """
+        ret_str = self.subwords[0].hyphenated
+        prev_subword = self.subwords[0]
+
+        for subword in self._subwords[1:]:
+            if not (subword.left_symbol or subword.right_symbol) and not prev_subword.right_symbol:
+                ret_str += '-' + subword.string
+            else:
+                ret_str += subword.hyphenated
+            prev_subword = subword
+        return ret_str
 
     @property
     def string(self): return ''.join([str(s) for s in self._subwords])
