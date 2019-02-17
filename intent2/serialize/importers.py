@@ -309,7 +309,6 @@ def create_phrase_from_words_tier(tier: xigt.model.Tier, id_to_object_mapping: d
     return p
 
 
-
 def handle_freefloating_hyphens(subword_obj: SubWord, prev_subword: SubWord,
                                 tier_id, igt_id, item_id):
     """
@@ -530,33 +529,38 @@ def parse_trans_tier(inst, id_to_object_mapping):
     :type id_to_object_mapping: dict
     :type inst: xigt.model.Igt
     """
-    trans_tier = xigt_find(inst, type='translations')
+    trans_phrases_tier = xigt_find(inst, type='translations')
 
     # If there's a translations words tier, use that.
-    trans_words_tier = xigt_find(inst, segmentation='t', type='words')
+    trans_words_tier = xigt_find(inst, segmentation='t', type='words') # type: Item
     if trans_words_tier:
         IMPORT_LOG.debug("trans-words tier found.")
         p = load_words(id_to_object_mapping,
                        words_tier=trans_words_tier,
                        WordType=TransWord)
-        p.id = 't'
+        p.id = trans_words_tier.id
+        return p
 
-    if not trans_tier:
+    # Otherwise, if there's neither a words tier nor a phrase tier
+    elif not trans_phrases_tier:
         return None
-    elif len(trans_tier) > 1:
+    elif len(trans_phrases_tier) > 1:
         raise ImportException('NOT IMPLEMENTED: Multiple Translations!')
-    elif trans_tier[0].value() is None:
+    elif trans_phrases_tier[0].value() is None:
         return None
+    else:
+        # Otherwise, tokenize the words on the translation tier and create a
+        # new phrase.
 
-    # Otherwise, tokenize the words on the translation tier and create a
-    # new phrase.
-    trans_phrase = Phrase(id_='tw')
-    trans_tier_str = trans_tier[0].value()
-    IMPORT_LOG.debug('No trans-word tier found for instance "{}", tokenizing trans phrase: "{}"'.format(inst.id, trans_tier_str))
-    for i, word in enumerate(word_tokenize(trans_tier_str)):
-        trans_phrase.append(TransWord(word,
-                                      id_=item_id('tw', i+1)))
-    return trans_phrase
+        trans_phrase = Phrase(id_='tw')
+        trans_tier_str = trans_phrases_tier[0].value()
+        IMPORT_LOG.debug('No trans-word tier found for instance "{}", tokenizing trans phrase: "{}"'.format(inst.id, trans_tier_str))
+        for i, word in enumerate(word_tokenize(trans_tier_str)):
+            tw = TransWord(word, id_=item_id('tw', i+1))
+            id_to_object_mapping[tw.id] = tw
+            trans_phrase.append(tw)
+
+        return trans_phrase
 
 def parse_pos(inst, pos_id, id_to_object_mapping):
     """
@@ -655,17 +659,16 @@ def parse_bilingual_alignments(xigt_inst: Igt,
             src_id = align_item.attributes.get('source')
             tgt_id = align_item.attributes.get('target')
 
-
             src_obj = id_to_object_mapping.get(src_id) # type: Union[Word,SubWord]
             tgt_obj = id_to_object_mapping.get(tgt_id) # type: Union[Word,SubWord]
 
             if src_obj and tgt_obj:
                 IMPORT_LOG.debug('Importing alignment of {}\u2b64{}'.format(repr(src_obj), repr(tgt_obj)))
                 src_obj.add_alignment(tgt_obj)
-            if not src_obj:
-                IMPORT_LOG.debug('Alignment import issue: ID "{}" was not found.'.format(src_obj))
-            if not tgt_obj:
-                IMPORT_LOG.debug('Alignment import issue: ID "{}" was not found.'.format(src_obj))
+            elif not src_obj:
+                IMPORT_LOG.warning('Alignment import issue: ID "{}" was not found.'.format(src_obj))
+            elif not tgt_obj:
+                IMPORT_LOG.warning('Alignment import issue: ID "{}" was not found.'.format(src_obj))
 
 
 def align_gloss_lang_sw(gloss: Phrase, lang: Phrase):
@@ -678,7 +681,7 @@ def align_gloss_lang_sw(gloss: Phrase, lang: Phrase):
     if not (lang and gloss):
         raise LangGlossAlignException("Instance does not have both lang and gloss liens.")
     elif (len(lang) != len(gloss)):
-        raise LangGlossAlignException("Unequal number of lang/gloss tokens.")
+        raise LangGlossAlignException("Unequal number of lang/gloss tokens ({} vs {})".format(len(lang), len(gloss)))
 
     for lang_word, gloss_word in zip(lang, gloss): # type: Word, Word
 

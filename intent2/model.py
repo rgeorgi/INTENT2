@@ -1,7 +1,7 @@
 import re
 import unittest
 from collections import defaultdict
-from typing import Generator, Iterable, Iterator, Union, ByteString
+from typing import Generator, Iterable, Iterator, Union, ByteString, Set
 
 class DependencyException(Exception): pass
 
@@ -18,7 +18,7 @@ class AlignableMixin(object):
     @property
     def alignments(self):
         """
-        :rtype: set[Union[Word,SubWord]]
+        :rtype: Set[Union[Word,SubWord]]
         """
         alns = getattr(self, '_alignment', set([]))
         # Also include alignments of subwords if this is a word
@@ -39,6 +39,21 @@ class AlignableMixin(object):
         assert isinstance(other, AlignableMixin)
         self.alignments -= {other}
         other.alignments -= {self}
+
+    @property
+    def aligned_words(self):
+        """
+        Return the set of alignments that this item is aligned to,
+        where the aligned item is a type of class word. If the target
+        was a subword, find its parent word.
+        """
+        alignments = set([])
+        for aligned_item in self.alignments: # type: Union[Word, SubWord]
+            if isinstance(aligned_item, SubWord):
+                alignments.add(aligned_item.word)
+            else:
+                alignments.add(aligned_item)
+        return alignments
 
 class IdMixin(object):
     @property
@@ -138,7 +153,11 @@ class DependencyStructure(set):
             parent_links = self.get_parent_links(link.parent)
             filtered_links = {parent_link for parent_link in parent_links if parent_link not in seen_links}
             if not filtered_links:
-                raise DependencyException('Cycle found for link "{}"'.format(link))
+                # TODO: Better cycle handling
+                raise DependencyException('Cycle found in "{} [{}] -> {} [{}]"'.format(link.child,
+                                                                                       link.child.id,
+                                                                                       link.parent,
+                                                                                       link.parent.id))
             else:
                 return min({self.depth(parent_link, seen_links=seen_links | parent_links)
                             for parent_link in filtered_links}) + 1
@@ -600,6 +619,14 @@ class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMix
     def __hash__(self):
         return hash((self.left_symbol, self.right_symbol, self.id))
 
+    def __copy__(self):
+        return SubWord(self.string, word=self.word, index=self.index,
+                       left_symbol=self.left_symbol, right_symbol=self.right_symbol)
+
+    def __deepcopy__(self, memodict={}):
+        return self.__copy__()
+
+
 
 class Phrase(list, IdMixin, DependencyMixin):
     """
@@ -669,12 +696,26 @@ class Phrase(list, IdMixin, DependencyMixin):
     def alignments(self):
         """
         Return all the alignments
-        :rtype: Iterable[AlignableMixin]
+        :rtype: set[Tuple[AlignableMixin, AlignableMixin]]
         """
-        alignments = []
-        for elt in self:
-            for aligned_elt in elt.alignments:
-                alignments.append((elt, aligned_elt))
+        alignments = set([])
+        for word in self:
+            for aligned_item in word.alignments:
+                alignments.add((word, aligned_item))
+        return alignments
+
+    @property
+    def aligned_words(self):
+        """
+        Return all alignments, but map subwords to their
+        parent words.
+
+        :rtype: set[Tuple[Word, Word]]
+        """
+        alignments = set([])
+        for word in self:
+            for aligned_word in word.aligned_words:
+                alignments.add((word, aligned_word))
         return alignments
 
 

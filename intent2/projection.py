@@ -9,7 +9,7 @@ namely:
 """
 from intent2.model import Instance, Word, SubWord, Phrase, DependencyLink, TransWord
 from intent2.processing import process_trans_if_needed
-from typing import Iterable, Generator, List, Tuple, Iterator
+from typing import Iterable, Generator, List, Tuple, Iterator, Union
 import itertools
 
 from spacy.tokens import Doc, Span, Token
@@ -209,7 +209,31 @@ def combine_subword_tags(p: Phrase):
         best_tags = sorted(tags, key=lambda tag: precedence.index(tag))
         word.pos = best_tags[0] if best_tags else None
 
+# -------------------------------------------
+# Clearing Bilingual Alignments/POS to do re-enrichment
+# -------------------------------------------
+def clear_bilingual_alignments(inst: Instance):
+    """
+    Remove bilingual alignments from an instance (not lang-to-gloss)
+    """
+    for trans_word in inst.trans:
+        for aligned_item in list(trans_word.alignments): # type: Union[Word, SubWord]
+            trans_word.remove_alignment(aligned_item)
 
+def clear_pos_tags(inst: Instance):
+    """
+    Remove all POS tags from an instance
+    """
+    for lang_word in inst.lang:
+        lang_word.pos = None
+        for lang_subword in lang_word.subwords:
+            lang_subword.pos = None
+    for gloss_word in inst.gloss:
+        gloss_word.pos = None
+        for gloss_subword in gloss_word.subwords:
+            gloss_subword.pos = None
+    for trans_word in inst.trans:
+        trans_word.pos = None
 
 # -------------------------------------------
 # UnitTests
