@@ -416,7 +416,7 @@ class DependencyLink(object):
 # -------------------------------------------
 # Non-Mixin Classes
 # -------------------------------------------
-class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTokenMixin, IdMixin):
+class Word(TaggableMixin, AlignableMixin, VectorMixin, SpacyTokenMixin, IdMixin):
     """
     Word class
 
@@ -484,7 +484,7 @@ class Word(TaggableMixin, AlignableMixin, DependencyMixin, VectorMixin, SpacyTok
 
     @property
     def subwords(self):
-        """:rtype: Iterable[SubWord]"""
+        """:rtype: List[SubWord]"""
         return self._subwords
 
     @property
@@ -598,7 +598,7 @@ class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMix
                 and self.id == other.id)
 
     def __hash__(self):
-        return hash(self.hyphenated + '-' + self.id)
+        return hash((self.left_symbol, self.right_symbol, self.id))
 
 
 class Phrase(list, IdMixin, DependencyMixin):
@@ -745,24 +745,12 @@ class DependencyTests(unittest.TestCase):
         setUpPhrase(self)
 
     def test_dependencies(self):
-        self.wordA.add_dependent(self.wordB)
-        self.assertTrue(len(self.wordA.dependency_links) == 1)
-        dep = next(iter(self.wordA.dependency_links))
+        ds = DependencyStructure()
+        ds.add(DependencyLink(self.wordB, self.wordA))
 
-        # Make sure
-        self.assertTrue(dep.child == self.wordB)
-        self.assertFalse(dep.child == self.wordA)
-        self.assertTrue(dep.parent == self.wordA)
-        self.assertFalse(dep.parent == self.wordB)
+        self.assertTrue(len(ds) == 1)
 
-        # Add one more
-        self.wordA.add_dependent(self.wordC)
-        self.assertTrue(len(self.wordA.dependency_links) == 2)
-
-        depA = self.wordA.dependency_links
-        depC = self.wordC.dependency_links
-
-        self.assertTrue(len(depA & depC) == 1)
+        #TODO: Add more dependency tests
 
 class PhraseTests(unittest.TestCase):
     def setUp(self):

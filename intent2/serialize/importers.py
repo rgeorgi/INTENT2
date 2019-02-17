@@ -6,9 +6,9 @@ import xigt.codecs.xigtxml
 from xigt.model import Igt, Item
 from intent2.xigt_helpers import xigt_find
 from intent2.model import Word, GlossWord, TransWord, LangWord, SubWord, Phrase, TaggableMixin, Instance, Corpus
-from intent2.utils.strings import morph_tokenize, subword_str_to_subword, word_tokenize, word_str_to_subwords
+from intent2.utils.strings import subword_str_to_subword, word_tokenize, word_str_to_subwords
 
-from typing import Union
+from typing import Union, Iterable, Tuple
 
 import logging
 IMPORT_LOG = logging.getLogger('import')
@@ -208,6 +208,7 @@ test_case_one = """
 
 class ImportException(Exception): pass
 class SegmentationTierException(ImportException): pass
+class LangGlossAlignException(ImportException): pass
 
 
 # -------------------------------------------
@@ -236,6 +237,7 @@ def parse_lang_tier(inst, id_to_object_mapping):
     p = load_words(id_to_object_mapping,
                    words_tier=lang_tier,
                    segmentation_tier=morph_tier,
+                   segment_id_base='m',
                    WordType=LangWord)
     p.id = LANG_WORD_ID
     return p
@@ -257,6 +259,7 @@ def parse_gloss_tier(inst: Igt, id_to_object_mapping):
                          words_tier=gloss_words_tier,
                          segmentation_tier=gloss_tier,
                          alignment_tier=lang_words_tier,
+                         segment_id_base='g',
                          WordType=GlossWord)
 
     gloss_p._id = 'gw'
@@ -272,8 +275,8 @@ def item_id(base_str, n):
     """
     return '{}{}'.format(base_str, n)
 
-def create_phrase_from_words_tier(tier: xigt.model.Tier,
-                                  do_segmentation: bool=True,
+def create_phrase_from_words_tier(tier: xigt.model.Tier, id_to_object_mapping: dict,
+                                  segment_id_base: str=None,
                                   WordType=Word):
     """
     Given a tier without pre-provided segmentation, return a phrase
@@ -284,15 +287,26 @@ def create_phrase_from_words_tier(tier: xigt.model.Tier,
     :return:
     """
     def word_func(xigt_word_item):
-        if do_segmentation:
+        """:type xigt_word_item: Item"""
+        if segment_id_base:
             w = WordType(subwords=word_str_to_subwords(xigt_word_item.value()),
                          id_=xigt_word_item.id)
         else:
             w = WordType(xigt_word_item.value(),
                          id_=xigt_word_item.id)
+        id_to_object_mapping[xigt_word_item.id] = w
         return w
 
-    return Phrase([word_func(xw) for xw in tier])
+    # give id strings to the newly created
+    # subwords.
+    p = Phrase([word_func(xw) for xw in tier])
+    if segment_id_base:
+        assert segment_id_base is not None
+        for i, sw in enumerate(p.subwords):
+            sw.id = item_id(segment_id_base, i+1)
+            id_to_object_mapping[sw.id] = sw
+
+    return p
 
 
 
@@ -394,7 +408,7 @@ def create_phrase_from_segments_alignments(id_to_object_mapping,
 
 def load_words(id_to_object_mapping,
                words_tier=None, segmentation_tier=None, alignment_tier=None,
-               do_segmentation=True, WordType=Word):
+               segment_id_base=None, WordType=Word):
     """
     Given a words tier (tier) and tier that provides segmentation for that tier, but which
     may be None (segmentation_tier), return a phrase with those words/subwords.
@@ -436,8 +450,8 @@ def load_words(id_to_object_mapping,
     # -- B) If there's not a segmentation tier, return the phrase
     #       created by the words tier alone.
     elif not segmentation_tier:
-        return create_phrase_from_words_tier(words_tier,
-                                             do_segmentation=do_segmentation,
+        return create_phrase_from_words_tier(words_tier, id_to_object_mapping,
+                                             segment_id_base=segment_id_base,
                                              WordType=WordType)
 
     # -- A) If there is both a words tier and segmentation tier,
@@ -449,8 +463,9 @@ def load_words(id_to_object_mapping,
         # that are given as segments
         prev_sw = None
         for xigt_word_item in words_tier:  # type: xigt.model.Item
+
             morph_segments = [morph for morph in segmentation_tier
-                              if xigt_word_item.id in xigt.ref.ids(morph.segmentation)]
+                              if xigt_word_item.id in segmenting_refs(morph)]
 
             # If the segmentation tier is provided,
             # we assume that every word has some form
@@ -498,6 +513,13 @@ def load_words(id_to_object_mapping,
     else:
         raise ImportException("Unable to create phrase.")
 
+def segmenting_refs(morph: xigt.model.Item):
+    if morph.content:
+        return xigt.ref.ids(morph.content)
+    elif morph.segmentation:
+        return xigt.ref.ids(morph.segmentation)
+    else:
+        raise SegmentationTierException('Neither segmentation nor content was given for morph "{}"'.format(morph.id))
 
 
 
@@ -514,9 +536,10 @@ def parse_trans_tier(inst, id_to_object_mapping):
     trans_words_tier = xigt_find(inst, segmentation='t', type='words')
     if trans_words_tier:
         IMPORT_LOG.debug("trans-words tier found.")
-        return load_words(id_to_object_mapping,
-                          words_tier=trans_words_tier,
-                          WordType=TransWord)
+        p = load_words(id_to_object_mapping,
+                       words_tier=trans_words_tier,
+                       WordType=TransWord)
+        p.id = 't'
 
     if not trans_tier:
         return None
@@ -536,6 +559,9 @@ def parse_trans_tier(inst, id_to_object_mapping):
     return trans_phrase
 
 def parse_pos(inst, pos_id, id_to_object_mapping):
+    """
+    Parse pre-existing POS tag tiers.
+    """
     pos_tag_tier = xigt_find(inst, alignment=pos_id, type='pos') or []
     for pos_tag_item in pos_tag_tier:  # type: xigt.model.Item
         aligned_object = id_to_object_mapping.get(pos_tag_item.alignment) # type: TaggableMixin
@@ -566,21 +592,51 @@ def parse_xigt_corpus(xigt_corpus, ignore_import_errors=True):
 
     return Corpus(instances)
 
-def parse_odin(xigt_inst, tag, WordType=Word):
+def parse_odin(xigt_inst, tag, WordType,
+               word_id_base, subword_id_base):
     """
     Look for the normalized ODIN tier of the given
     tag type, and convert it to words/subwords objects.
 
+    :param xigt_inst: The Xigt instance being parsed.
     :type xigt_inst: xigt.model.Igt
+    :param tag: The L/G/T tag for which an ODIN line is being searched for.
+    :param WordType: What word class to use to wrap the word objects.
+    :param word_id_base: What ID string to use for the word tokens' prefixes.
+    :param subword_id_base: What ID string to use for the subword tokens' prefixes, or None to not create subword tokens.
     """
-    normalized_tier = xigt_find(xigt_inst, type="odin", attributes={'state':'normalized'})
+    normalized_tier = xigt_find(xigt_inst, type="odin", attributes={'state': 'normalized'})
     if normalized_tier:
-        normalized_line = xigt_find(normalized_tier, tag=tag.upper())
-        if normalized_line and normalized_line.value(): # type: xigt.model.Item
-            words = [WordType(subwords=morph_tokenize(w)) for w in word_tokenize(normalized_line.value())]
-            return Phrase(words)
+        normalized_line = xigt_find(normalized_tier, tag=tag.upper())  # type: xigt.model.Item
 
+        # If a (non-blank) normalized line was found, tokenize it into a phrase.
+        if normalized_line and normalized_line.value().strip():
+            words = []
+            for word_string in word_tokenize(normalized_line.value()):
+
+                assert word_string.strip()
+
+                # Only segment into subwords if the id_base is not None
+                if subword_id_base is not None:
+                    subwords = word_str_to_subwords(word_string)
+                    words.append(WordType(subwords=subwords))
+                else:
+                    words.append(WordType(string=word_string))
+
+            # Create the phrase, and assign the tokens unique IDs.
+            p = Phrase(words)
+            assign_ids(p, word_id_base, subword_id_base)
+            return p
+
+    # Return an empty phrase if this normalized line doesn't exist.
     return Phrase()
+
+def assign_ids(p: Phrase, word_id_base: str, subword_id_base: str):
+    for word in p:
+        word.id = item_id(word_id_base, word.index+1)
+    for i, subword in enumerate(p.subwords):
+        subword.id = item_id(subword_id_base, i+1)
+
 
 def parse_bilingual_alignments(xigt_inst: Igt,
                                id_to_object_mapping: dict):
@@ -599,6 +655,7 @@ def parse_bilingual_alignments(xigt_inst: Igt,
             src_id = align_item.attributes.get('source')
             tgt_id = align_item.attributes.get('target')
 
+
             src_obj = id_to_object_mapping.get(src_id) # type: Union[Word,SubWord]
             tgt_obj = id_to_object_mapping.get(tgt_id) # type: Union[Word,SubWord]
 
@@ -610,6 +667,39 @@ def parse_bilingual_alignments(xigt_inst: Igt,
             if not tgt_obj:
                 IMPORT_LOG.debug('Alignment import issue: ID "{}" was not found.'.format(src_obj))
 
+
+def align_gloss_lang_sw(gloss: Phrase, lang: Phrase):
+    """
+    Attempt to align gloss and lang subwords.
+
+    For each word, there should be either an equal number of SubWords to align,
+    or only one SubWord on one side.
+    """
+    if not (lang and gloss):
+        raise LangGlossAlignException("Instance does not have both lang and gloss liens.")
+    elif (len(lang) != len(gloss)):
+        raise LangGlossAlignException("Unequal number of lang/gloss tokens.")
+
+    for lang_word, gloss_word in zip(lang, gloss): # type: Word, Word
+
+        # Check that either only one word has a single subword, or that both
+        # have an equal number of subwords.
+        if len(lang_word.subwords) == 1:
+            for gloss_subword in gloss_word.subwords:
+                gloss_subword.add_alignment(lang_word.subwords[0])
+        elif len(gloss_word.subwords) == 1:
+            for lang_subword in lang_word.subwords:
+                lang_subword.add_alignment(gloss_word.subwords[0])
+        elif len(lang_word.subwords) == len(gloss_word.subwords):
+            for lang_subword, gloss_subword in zip(gloss_word.subwords, lang_word.subwords): # type: SubWord, SubWord
+                lang_subword.add_alignment(gloss_subword)
+        else:
+            raise LangGlossAlignException('Unalignable number of lang/gloss tokens: "{}"--"{}"'.format(
+                lang_word.subwords,
+                gloss_word.subwords
+            ))
+
+        lang_word.add_alignment(gloss_word) # Reciprocal is added automatically
 
 
 def parse_xigt_instance(xigt_inst: Igt):
@@ -628,24 +718,30 @@ def parse_xigt_instance(xigt_inst: Igt):
     # Keep a mapping of the ID strings and their associated mappings
     id_to_object_mapping = {}
 
-    def process_tier_or_odin(func, odin_tag, WordType):
+    def process_tier_or_odin(func, odin_tag, WordType, word_id_base, subword_id_base):
         """
         Attempt to parse
         """
         phrase = func(xigt_inst, id_to_object_mapping)
         if not phrase:
-            return parse_odin(xigt_inst, odin_tag, WordType)
+            return parse_odin(xigt_inst, odin_tag, WordType, word_id_base, subword_id_base)
         return phrase
 
 
     # -- 1a) Create the language phrase
-    lang_p = process_tier_or_odin(parse_lang_tier, 'L', LangWord)
+    lang_p = process_tier_or_odin(parse_lang_tier, 'L', LangWord, 'w', 'm')
 
     # -- 1b) Create the gloss phrase
-    gloss_p = process_tier_or_odin(parse_gloss_tier, 'G', GlossWord)
+    gloss_p = process_tier_or_odin(parse_gloss_tier, 'G', GlossWord, 'gw', 'g')
 
     # -- 1c) Create the translation phrase
-    trans_p = process_tier_or_odin(parse_trans_tier, 'T', TransWord)
+    trans_p = process_tier_or_odin(parse_trans_tier, 'T', TransWord, 'tw', None)
+
+    # -- 1d) Align gloss and language subwords if possible.
+    try:
+        align_gloss_lang_sw(gloss_p, lang_p)
+    except ImportException as ie:
+        IMPORT_LOG.error('Error aligning gloss and language tokens for instance "{}": {}'.format(xigt_inst.id, ie))
 
     # -- 2) Add any POS tags found.
     parse_pos(xigt_inst, 'm', id_to_object_mapping)

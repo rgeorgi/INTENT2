@@ -33,8 +33,8 @@ def tier_to_xigt(igt: Igt,
     """
     Given
     """
-    # -- 0) Do nothing if the phrase does not exist.
-    if phrase is None:
+    # -- 0) Do nothing if the phrase is empty.
+    if not phrase:
         return
 
     # -- 1) Create phrase tier if expected, and if
@@ -142,6 +142,10 @@ def xigt_add_bilingual_alignment(xigt_inst: Igt, trans: Phrase):
                                      'target': LANG_WORD_ID})
     for t_w in trans: # type: TransWord
         for aligned_gloss in [item for item in t_w.alignments if isinstance(item, SubWord)]:
+
+
+            assert t_w.id is not None
+            assert aligned_gloss.id is not None, aligned_gloss
 
             aln_item = Item(id='a{}'.format(len(tw_to_g_tier) + 1),
                             attributes={'source': t_w.id,

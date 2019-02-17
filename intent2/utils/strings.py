@@ -30,6 +30,9 @@ def word_str_to_subwords(w: str):
     :return:
     """
 
+    # Remove whitespace
+    w = re.sub('\s', '', w)
+
     # Iteratively look for the next morpheme break or
     # end of string, and the
     subwords = []
@@ -101,12 +104,6 @@ def word_tokenize(phrase_string):
     # split_phrase = re.findall('[\w\.\-\:]+', phrase_string)
     split_phrase = nltk.word_tokenize(phrase_string)
     return split_phrase
-
-def morph_tokenize(word_string):
-    """
-    Given a word, return the sets of subwords that compose it.
-    """
-    return [morph for morph in re.split('[\s\-=]+', word_string) if morph.strip()]
 
 def character_align(word_string, subword_string, skip_re='[\-\s]'):
     """
