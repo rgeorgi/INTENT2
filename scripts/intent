@@ -14,6 +14,9 @@ from intent2.alignment import heuristic_alignment, AlignException
 import argparse
 from xigt.codecs.xigtxml import load
 import logging
+
+from intent2.utils.visualization import visualize_alignment, draw_alignment, alignment_to_png
+
 logging.basicConfig()
 
 ROOT_LOGGER = logging.getLogger()
@@ -31,11 +34,12 @@ if __name__ == '__main__':
     p.add_argument('--no-dsproject', action='store_true', help="Disable DS projection")
 
     p.add_argument('--ignore-import-errors', action='store_true', default=False, help='Skip instances that cause errors on import. They will not be ingested')
-    p.add_argument('--ds-pngs', default=None, help='Directory to store dependency structure PNGs for debugging')
     p.add_argument('--ds-thresh', default=0.0, type=float, help='Threshold')
 
-    args = p.parse_args()
+    p.add_argument('--ds-pngs', default=None, help='Directory to store dependency structure PNGs for debugging')
+    p.add_argument('--aln-pngs', default=None, help='Directory to store alignment PNGs for debugging')
 
+    args = p.parse_args()
     # -------------------------------------------
     # Set logging verbosity.
     # -------------------------------------------
@@ -82,6 +86,10 @@ if __name__ == '__main__':
                 # Remove old alignments!
                 alignments = heuristic_alignment(inst)
                 if alignments:
+                    if args.aln_pngs:
+                        os.makedirs(args.aln_pngs, exist_ok=True)
+                        aln_png_path = os.path.join(args.aln_pngs, '{}_aln.png'.format(inst.id))
+                        alignment_to_png(inst, aln_png_path)
                     align_count += 1
 
             # Perform alignment evaluation

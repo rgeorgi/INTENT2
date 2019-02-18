@@ -6,6 +6,8 @@ aspects for printing and debugging.
 from intent2.model import Instance, Word, SubWord, Phrase, TransWord
 from typing import Union
 from termcolor import colored
+import graphviz
+from matplotlib import pyplot
 
 def find_lengths(*iters):
     """
@@ -77,4 +79,45 @@ def visualize_alignment(inst: Instance):
 
     print(ret_str)
     return ret_str
+
+def draw_alignment(inst: Instance):
+    """
+    Represent the instance with a png graph
+    """
+    dot = graphviz.Graph(engine='fdp')
+
+    def phrase_to_subgraph(p: Phrase, v_level):
+        with dot.subgraph(name=p.id) as sg:
+            for i, word in enumerate(p):
+                sg.node(word.id,
+                        label=word.hyphenated,
+                        shape='plaintext',
+                        pos='{0},{1}!'.format(i, v_level))
+
+    # Attempt to space the vertical distance between trans/gloss
+    # proportional to the length of the gloss tier, otherwise
+    # it is hard to read.
+    height_sep = max(1, len(inst.gloss) / 10)
+
+    phrase_to_subgraph(inst.lang, height_sep + 1)
+    phrase_to_subgraph(inst.gloss, height_sep * 1)
+    phrase_to_subgraph(inst.trans, 0)
+
+    for tw, gw in inst.trans.aligned_words: # type: Word, Word
+        dot.edge(tw.id, gw.id)
+
+    for lw, gw in inst.lang.aligned_words: # type: Word, Word
+        dot.edge(lw.id, gw.id)
+
+
+    dot.attr(overlap='false', sep='1')
+    png = dot.pipe(format='png')
+    return png
+
+def alignment_to_png(inst: Instance, path: str):
+    """
+    Save the visualized alignment to a png.
+    """
+    with open(path, 'wb') as png_f:
+        png_f.write(draw_alignment(inst))
 

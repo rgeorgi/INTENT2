@@ -614,7 +614,7 @@ def parse_odin(xigt_inst, tag, WordType,
         normalized_line = xigt_find(normalized_tier, tag=tag.upper())  # type: xigt.model.Item
 
         # If a (non-blank) normalized line was found, tokenize it into a phrase.
-        if normalized_line and normalized_line.value().strip():
+        if normalized_line and normalized_line.value() and normalized_line.value().strip():
             words = []
             for word_string in word_tokenize(normalized_line.value()):
 
