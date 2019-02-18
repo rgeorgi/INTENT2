@@ -735,6 +735,9 @@ class Phrase(list, IdMixin, DependencyMixin):
                 alignments.add((word, aligned_word))
         return alignments
 
+    @property
+    def tags(self): return [w.pos for w in self]
+
 
 class Instance(IdMixin):
     """
@@ -772,6 +775,8 @@ class Instance(IdMixin):
 
     def __repr__(self):
         return '<IGT Instance with {} words>'.format(len(self.lang))
+
+
 
 class Corpus(list):
     """

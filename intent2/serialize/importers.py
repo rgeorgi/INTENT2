@@ -751,6 +751,8 @@ def parse_xigt_instance(xigt_inst: Igt):
     # -- 2) Add any POS tags found.
     parse_pos(xigt_inst, 'm', id_to_object_mapping)
     parse_pos(xigt_inst, 'w', id_to_object_mapping)
+    parse_pos(xigt_inst, 'gw', id_to_object_mapping)
+
 
     parse_bilingual_alignments(xigt_inst, id_to_object_mapping)
 

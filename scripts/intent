@@ -3,9 +3,10 @@ import os
 import sys
 from collections import defaultdict
 
-from intent2.eval import eval_bilingual_alignments, print_aln_eval
+from intent2.eval import eval_bilingual_alignments, eval_aln_report, get_lg_tags, eval_pos, PRFEval, \
+    eval_pos_report
 from intent2.exceptions import ProcessException
-from intent2.projection import project_pos, project_ds, clear_bilingual_alignments
+from intent2.projection import project_pos, project_ds, clear_bilingual_alignments, clear_pos_tags
 from intent2.model import DependencyException
 from intent2.serialize.importers import parse_xigt_corpus
 from intent2.serialize.exporters import corpus_to_xigt
@@ -14,8 +15,6 @@ import argparse
 from xigt.codecs.xigtxml import load
 import logging
 logging.basicConfig()
-
-from copy import deepcopy, copy
 
 ROOT_LOGGER = logging.getLogger()
 
@@ -66,20 +65,26 @@ if __name__ == '__main__':
     ds_project_count = 0
 
     # Counters for alignment eval.
-    aln_eval = defaultdict(int)
+    aln_eval = PRFEval()
+    lg_pos_eval = PRFEval()
+    t_pos_eval = PRFEval()
 
     for inst in corp:
 
         old_alignments = inst.trans.alignments
+        old_lg_tags = get_lg_tags(inst)
+        old_trans_tags = [tw.pos for tw in inst.trans] if inst.trans else []
+        clear_pos_tags(inst)
+        clear_bilingual_alignments(inst)
 
         try:
             if not args.no_align:
                 # Remove old alignments!
-                clear_bilingual_alignments(inst)
                 alignments = heuristic_alignment(inst)
                 if alignments:
                     align_count += 1
 
+            # Perform alignment evaluation
             if old_alignments and inst.trans.alignments:
                 eval_bilingual_alignments(inst, old_alignments, aln_eval)
 
@@ -87,6 +92,7 @@ if __name__ == '__main__':
             # Only try projection if there
             # are alignments.
             if inst.trans.alignments:
+
                 if not args.no_posproject:
                     project_pos(inst)
                     pos_project_count += 1
@@ -94,7 +100,11 @@ if __name__ == '__main__':
                     new_ds = project_ds(inst)
                     ds_project_count += 1
 
-
+            # Perform POS tag evaluation
+            if old_lg_tags:
+                eval_pos(old_lg_tags, get_lg_tags(inst), lg_pos_eval)
+            if old_trans_tags:
+                eval_pos(old_trans_tags, inst.trans.tags, t_pos_eval)
 
 
             # Attempt to save dependency structures
@@ -130,7 +140,11 @@ if __name__ == '__main__':
         print("\t{} instances ds projected.".format(ds_project_count))
 
         if aln_eval:
-            print_aln_eval(aln_eval)
+            print(eval_aln_report(aln_eval))
+        if lg_pos_eval:
+            print(eval_pos_report(lg_pos_eval, 'Lang/Gloss'))
+        if t_pos_eval:
+            print(eval_pos_report(t_pos_eval, 'Translation'))
 
         print("Preparing to write output.")
         with open(args.output, 'w') as out_f:
