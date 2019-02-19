@@ -1,13 +1,27 @@
 from intent2.model import Instance, Corpus, Phrase, IdMixin, Word, SubWord, TransWord
+import intent2
 
 from xigt.errors import XigtError
 from xigt.model import XigtCorpus, Igt, Tier, Item
 from xigt.codecs.xigtxml import dumps
 from typing import Iterable, Tuple, Union, List
+from datetime import datetime
+
 import logging
 from .consts import *
 
 EXPORT_LOG = logging.getLogger('export')
+
+# -------------------------------------------
+# CONSTANTS
+# -------------------------------------------
+INTENT2_DATA_PROV = 'INTENT2-{}'.format(intent2.__version__)
+DATA_PROV_KEY = 'data-provenance'
+DATA_TIME_KEY = 'data-creation-time'
+
+def add_timestamp():
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+# -------------------------------------------
 
 def corpus_to_xigt(corp: Corpus):
     """
@@ -136,10 +150,14 @@ def xigt_add_bilingual_alignment(xigt_inst: Igt, trans: Phrase):
 
     tw_to_g_tier = Tier(id='a1', type='bilingual-alignments',
                         attributes={'source': TRANS_WORD_ID,
-                                    'target': GLOSS_SUBWORD_ID})
+                                    'target': GLOSS_SUBWORD_ID,
+                                    DATA_PROV_KEY: INTENT2_DATA_PROV,
+                                    DATA_TIME_KEY: add_timestamp()})
     tw_to_lw_tier = Tier(id='a2', type='bilingual-alignments',
                          attributes={'source': TRANS_WORD_ID,
-                                     'target': LANG_WORD_ID})
+                                     'target': LANG_WORD_ID,
+                                     DATA_PROV_KEY: INTENT2_DATA_PROV,
+                                     DATA_TIME_KEY: add_timestamp()})
     for t_w in trans: # type: TransWord
         for aligned_gloss in [item for item in t_w.alignments if isinstance(item, SubWord)]:
 
@@ -173,7 +191,9 @@ def xigt_add_dependencies(xigt_inst: Igt, phrase: Phrase):
     if not phrase.dependency_structure:
         return
     dep_tier = Tier(type='dependencies', id='{}-ds'.format(phrase.id),
-                    attributes={'dep':phrase.id, 'head':phrase.id})
+                    attributes={'dep':phrase.id, 'head':phrase.id,
+                                DATA_PROV_KEY: INTENT2_DATA_PROV,
+                                DATA_TIME_KEY: add_timestamp()})
     for i, dep_link in enumerate(sorted(phrase.dependency_structure,
                                         key=lambda link: link.child.index)):
         dep_item = Item(id='{}-dep{}'.format(phrase.id, i+1),
