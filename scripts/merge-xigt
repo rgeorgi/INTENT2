@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""
+This script is used to take
+"""
+import sys
+from argparse import ArgumentParser
+from intent2.utils.cli_args import existsfile
+from xigt.codecs import xigtxml
+from xigt.model import Igt, XigtCorpus, Item, Tier
+from intent2.xigt_helpers import xigt_find
+from collections import defaultdict
+from typing import List, Dict, Iterable
+import string
+
+
+def merge_files(input_paths, output_path):
+    """
+    Given multiple input paths to Xigt-XML files, and
+    a single output path, combine instances with identical
+    IDs, and combine tiers from the multiple files.
+
+    :type input_paths: List[str]
+    :param output_path: str
+    :return:
+    """
+    mm = MergeMap()
+
+    new_corpus = XigtCorpus()
+    # Iterate through each of the input paths,
+    # and build up a dictionary of overlapping
+    # instances.
+    for path in input_paths:
+        with open(path, 'r') as xigt_f:
+            xc = xigtxml.load(xigt_f)
+            mm.add_corpus(xc)
+            new_corpus.id = xc.id
+            new_corpus.attributes.update(xc.attributes)
+
+    # Now, iterate through that dictionary, and combine instances.
+    for inst_id, instances in mm.instances:
+        merged_instance = merge_instances(inst_id, instances, mm)
+        new_corpus.append(merged_instance)
+
+    with open(output_path, 'w') as out_f:
+        xigtxml.dump(out_f, new_corpus)
+
+class MergeMap(object):
+    def __init__(self):
+        self._instances = defaultdict(list)
+        self._tiers = defaultdict(list)
+        self._items = defaultdict(list)
+        self._items_by_tier = defaultdict(lambda: defaultdict(list))
+        self._types = defaultdict(lambda: defaultdict(list))
+
+    def add_corpus(self, xc: XigtCorpus):
+        for instance in xc:
+            self.add_inst(instance)
+            for tier in instance:
+                self.add_tier(tier)
+                for item in tier:
+                    self.add_item(item)
+
+    def add_tier(self, tier: Tier):
+        self._tiers[(tier.igt.id, tier.id)].append(tier)
+        self._types[(tier.igt.id, tier.type)][(tier.igt.id, tier.id)].append(tier)
+
+    def add_inst(self, igt: Igt):
+        self._instances[igt.id].append(igt)
+
+    def add_item(self, item: Item):
+        self._items[(item.igt.id, item.tier.id, item.id)].append(item)
+        self._items_by_tier[(item.igt.id, item.tier.id)][(item.igt.id, item.tier.id, item.id)].append(item)
+
+    def get_items(self, igt_id, tier_id, item_id):
+        return self._items.get((igt_id, tier_id, item_id), [])
+
+    def get_items_for_tier(self, igt_id, tier_id):
+        return self._items_by_tier.get((igt_id, tier_id), defaultdict(list))
+
+    def get_tiers_by_id(self, igt_id, tier_id):
+        return self._tiers.get((igt_id, tier_id), [])
+
+    def get_tiers_by_type(self, igt_id, tier_type) -> Dict[str,List[Tier]]:
+        return self._types.get((igt_id, tier_type), defaultdict(list))
+
+    def get_tiers_by_type_and_id(self, igt_id, tier_type, tier_id):
+        return self._types.get((igt_id, tier_type), {}).get(tier_id, [])
+
+    def get_instances(self, igt_id):
+        return self._instances.get(igt_id, [])
+
+    @property
+    def instances(self):
+        for inst_id in sorted(self._instances.keys()):
+            yield inst_id, self.get_instances(inst_id)
+
+def merge_items(items: List[Item], igt_id, tier_id, item_id) -> Item:
+    """
+    Given a list of items with the same ID, return
+    a version that includes attributes from both
+    """
+    new_item = Item(id=item_id)
+    for item in items:
+        new_item.attributes.update(item.attributes)
+        if new_item.text is None:
+            new_item.text = item.value()
+    return new_item
+
+def merge_tiers(igt_id: str, tier_id: str, tiers: List[Tier],
+                mm: MergeMap, do_merge_items=True) -> Tier:
+    """
+    Given a set of tier objects, combine them.
+    """
+    new_tier = Tier(id=tier_id)
+    for tier in tiers:
+        assert tier.id == tier.id
+        new_tier.attributes.update(tier.attributes)
+
+    # Merge items
+    if do_merge_items:
+        for item_key, items in mm.get_items_for_tier(igt_id, tier_id).items():
+            new_item = merge_items(items, *item_key)
+            new_tier.append(new_item)
+
+    return new_tier
+
+# -------------------------------------------
+# Sorting Functions
+# -------------------------------------------
+def odin_sort(key: str):
+    """
+    Sort tiers in preferred ODIN order: r, c, n
+    """
+    if key == 'r':
+        return 0
+    if key == 'c':
+        return 1
+    if key == 'n':
+        return 2
+
+def merge_tiers_by_type(igt_id: str, type_str: str, mm: MergeMap) -> List[Tier]:
+    for tier_key, tiers in sorted(mm.get_tiers_by_type(igt_id, type_str).items(),
+                                  key=lambda x: odin_sort(x[0][1])):
+        yield merge_tiers(*tier_key, tiers, mm)
+
+
+def merge_phrase(phrases: List[Tier], mm) -> Tier:
+    """
+    Merge the phrase tier.
+    """
+    pass
+
+def uniqify_tiers(tier_list: List[Tier], id_base) -> List[Tier]:
+    """
+    Return the set of tiers with their ID strings
+    made unique, so that they don't collide.
+    """
+    if len(tier_list) == 1:
+        tier_list[0].id = id_base
+        return tier_list
+    else:
+        ret_tiers = []
+        for i, tier in enumerate(tier_list):
+            tier.id = '{}_{}'.format(id_base, string.ascii_lowercase[i])
+            ret_tiers.append(tier)
+        return ret_tiers
+
+
+def merge_instances(inst_id: str, instance_list: List[Igt], mm: MergeMap) -> Igt:
+    """
+    Given a list of instances of the same ID, combine their tiers in a logical way.
+    """
+    new_instance = Igt(id=inst_id)
+
+    # Keep track of the tier_ids we have yet to process.
+    remaining_tiers = {tier.id for tier_list in [inst.tiers for inst in instance_list] for tier in tier_list}
+
+    def remove_tier_id(tier_id):
+        nonlocal remaining_tiers
+        remaining_tiers -= {tier_id}
+
+    def merge_and_add_by_type(type_str):
+        type_tiers = merge_tiers_by_type(inst_id, type_str, mm)
+        for tier in type_tiers:
+            new_instance.append(tier)
+            remove_tier_id(tier.id)
+
+    def merge_and_add_by_id(tier_id):
+        tiers = mm.get_tiers_by_id(inst_id, tier_id)
+        merged_tier = merge_tiers(inst_id, tier_id, tiers, mm)
+        new_instance.append(merged_tier)
+        remove_tier_id(tier_id)
+
+
+    def merge_and_add_by_find(new_tier_id, **kwargs):
+        tiers = list(filter(None, [xigt_find(inst, **kwargs) for inst in instance_list]))
+        new_instance.append(merge_tiers(inst_id, new_tier_id, tiers, mm))
+        remove_tier_id(new_tier_id)
+        for tier in tiers:
+            remove_tier_id(tier.id)
+
+    def add_unique_tiers(tier_id):
+        tiers = mm.get_tiers_by_id(inst_id, tier_id)
+        remove_tier_id(tier_id)
+        for unique_tier in uniqify_tiers(tiers, tier_id):
+            new_instance.append(unique_tier)
+            remove_tier_id(unique_tier.id)
+
+    # -- 1) Add odin tiers.
+    merge_and_add_by_type('odin')
+
+    # -- 2) Add phrases
+    merge_and_add_by_type('phrases')
+
+    # -- 3) Add words tier
+    merge_and_add_by_id('w')
+    merge_and_add_by_find('m', segmentation='w')
+
+    # -- 4) Add glosses tier
+    merge_and_add_by_id('g')
+    merge_and_add_by_id('gw')
+
+    # -- 5) Add translations
+    merge_and_add_by_type('translations')
+    merge_and_add_by_find('tw', segmentation='t')
+
+    # -- 6) Regularize
+
+    # -- 4) Now, add enrichment tiers.
+    for tier_id in sorted(list(remaining_tiers)):
+        add_unique_tiers(tier_id)
+
+    return new_instance
+
+
+
+
+if __name__ == '__main__':
+    p = ArgumentParser()
+    p.add_argument('-i', '--input', help='Input files.', action='append', type=existsfile, required=True)
+    p.add_argument('-o', '--output', help='Output file.', required=True)
+
+    args = p.parse_args()
+
+    merge_files(args.input, args.output)

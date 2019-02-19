@@ -172,7 +172,8 @@ def xigt_add_dependencies(xigt_inst: Igt, phrase: Phrase):
     # Skip adding dependency structure if none exists for this phrase.
     if not phrase.dependency_structure:
         return
-    dep_tier = Tier(type='dependencies', id='{}-ds'.format(phrase.id))
+    dep_tier = Tier(type='dependencies', id='{}-ds'.format(phrase.id),
+                    attributes={'dep':phrase.id, 'head':phrase.id})
     for i, dep_link in enumerate(sorted(phrase.dependency_structure,
                                         key=lambda link: link.child.index)):
         dep_item = Item(id='{}-dep{}'.format(phrase.id, i+1),
