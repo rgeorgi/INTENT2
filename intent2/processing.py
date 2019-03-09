@@ -4,7 +4,6 @@ part-of-speech-tagging
 """
 from collections import Iterable
 
-from intent2.exceptions import ProcessException
 from intent2.model import Instance, DependencyStructure, DependencyLink
 
 import spacy

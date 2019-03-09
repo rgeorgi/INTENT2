@@ -8,6 +8,7 @@ import os, glob
 import sys
 from argparse import ArgumentParser
 
+from intent2.model import LangWord
 from intent2.projection import clear_pos_tags, clear_bilingual_alignments, project_pos
 
 from intent2.alignment import heuristic_alignment, AlignException
@@ -20,7 +21,7 @@ from xigt.codecs.xigtxml import load
 from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
 import pickle
 
-from intent2.utils.pos_tags import TagsetMapping
+from intent2.utils.pos_tags import TagsetMapping, get_lg_tag
 
 import logging
 logging.basicConfig()
@@ -102,7 +103,8 @@ if __name__ == '__main__':
                         # Use existing gold tags from the instance if
                         # the label extraction method is either "gold" or "both"
                         if use_gold_tags:
-                            gold_y.append(map_pos(gloss_w.pos, args.tagmap))
+                            lg_tag = get_lg_tag(gloss_w)  # Use lang POS tags over gloss if present.
+                            gold_y.append(map_pos(lg_tag, args.tagmap))
 
                     # Use (high-precision) heuristically projected tags for training labels
                     # if the label extraction method is either "aln" or "both"
@@ -147,15 +149,17 @@ if __name__ == '__main__':
     X_vecs = vectorizer.fit_transform(X_text)
     if args.vectors:
         with open(args.vectors, 'w') as vec_f:
-            for label, row in zip(y, X_text):
-                vec_f.write('{}\t{}\n'.format(label, ' '.join(row)))
+            for label, x_feats in zip(y, X_text):
+                vec_f.write('{}\t{}\n'.format(label, ' '.join(['{}:{:.3f}'.format(key, val)
+                                                               for key, val in x_feats.items()])
+                                              ))
 
     # Train the logistic regression classifier
     print('Training classifier using {} training instances'.format(len(X_text)))
     lr = LogisticRegressionCV(solver='saga', multi_class='ovr', cv=5, max_iter=10000)
     lr.fit(X_vecs, y)
 
-    describe_logreg(lr, vectorizer=vectorizer)
+    describe_logreg(lr, vectorizer)
 
     # Save the model
     lr = LRWrapper(lr, vectorizer, vocab)

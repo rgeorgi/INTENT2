@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 import os
-import sys
-from collections import defaultdict
+import argparse
 
-from intent.utils.argutils import existsfile
-from intent2.eval import eval_bilingual_alignments, eval_aln_report, get_lg_tags, eval_pos, PRFEval, \
-    eval_pos_report
-from intent2.exceptions import ProcessException
-from intent2.projection import project_pos, project_ds, clear_bilingual_alignments, clear_pos_tags
+from xigt import XigtCorpus
+import xigt.codecs.xigtxml
+
+from intent2.processing import process_trans_if_needed
+from intent2.serialize.consts import GLOSS_SUBWORD_ID, GLOSS_WORD_ID
+from intent2.utils.cli_args import existsfile
+from intent2.eval import eval_bilingual_alignments, eval_aln_report, eval_pos, PRFEval, eval_pos_report
+from intent2.projection import project_pos, project_ds, clear_bilingual_alignments, clear_pos_tags, clear_all_pos_tags
 from intent2.classification import LRWrapper
 from intent2.model import DependencyException
 from intent2.serialize.importers import parse_xigt_corpus
-from intent2.serialize.exporters import corpus_to_xigt
+from intent2.serialize.exporters import instance_to_xigt, xigt_add_bilingual_alignment, xigt_add_pos, xigt_add_dependencies
 from intent2.alignment import heuristic_alignment, AlignException
-import argparse
-from xigt.codecs.xigtxml import load
+from intent2.utils.pos_tags import get_lg_tag
+from intent2.utils.visualization import alignment_to_png
+
+# Set up logging
 import logging
-
-from intent2.utils.visualization import visualize_alignment, draw_alignment, alignment_to_png
-
 logging.basicConfig()
-
 ROOT_LOGGER = logging.getLogger()
 
 
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     p.add_argument('--no-dsproject', action='store_true', help="Disable DS projection")
     p.add_argument('--no-posclass', action='store_true', help='Disable POS classification.')
 
-    p.add_argument('--pos-class', type=existsfile, help='Path to the gloss-line classifier model.')
+    p.add_argument('-c', '--classifier', type=existsfile, help='Path to the gloss-line classifier model.')
 
     p.add_argument('--ignore-import-errors', action='store_true', default=False, help='Skip instances that cause errors on import. They will not be ingested')
     p.add_argument('--ds-thresh', default=0.0, type=float, help='Threshold')
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     # -------------------------------------------
 
     ROOT_LOGGER.info('Loading Xigt corpus from "{}"'.format(args.input))
-    xc = load(args.input, 'r')
+    xc = xigt.codecs.xigtxml.load(args.input, 'r')
 
     ROOT_LOGGER.info('Parsing Xigt corpus into INTENT2 data structures.')
     corp = parse_xigt_corpus(xc, ignore_import_errors=args.ignore_import_errors)
@@ -79,51 +79,88 @@ if __name__ == '__main__':
     t_pos_eval = PRFEval()
 
     # Initialize the POS classifier.
-    pos_classifier = None if not args.pos_class else LRWrapper.load(args.pos_class)
+    pos_classifier = None if not args.classifier else LRWrapper.load(args.classifier)
 
 
+    # Initialize the Xigt-XML corpus that will be written out.
+
+    new_xc = XigtCorpus()
     for inst in corp:
 
+        # Add the initial, "clean" instance to the new corpus.
+        new_xigt_inst = instance_to_xigt(inst)
+
+        # Save the existing alignments and POS tags from L/G lines
+        # in order to compare later.
         old_alignments = inst.trans.alignments
-        old_lg_tags = get_lg_tags(inst)
+        old_lg_tags = [get_lg_tag(gw) for gw in inst.gloss]
         old_trans_tags = [tw.pos for tw in inst.trans] if inst.trans else []
-        clear_pos_tags(inst)
+        clear_all_pos_tags(inst)
         clear_bilingual_alignments(inst)
 
-        try:
+        # Classify the gloss line:
+        if pos_classifier:
+            ROOT_LOGGER.debug('Using classifier for POS tags on instance {}'.format(inst.id))
+            gloss_class_tags = pos_classifier.classify(inst.gloss)
+            for gw, tag in zip(inst.gloss, gloss_class_tags):
+                gw.pos = tag
+            xigt_add_pos(new_xigt_inst, inst.gloss, inst.gloss.id, 'classifier')
+            clear_pos_tags(inst.gloss)
 
-            # Classify the gloss line:
+        # Process the translation line, if it is present.
+        if inst.trans:
+            process_trans_if_needed(inst)
+            xigt_add_pos(new_xigt_inst, inst.trans, inst.trans.id, 'spacy')
+            xigt_add_dependencies(new_xigt_inst, inst.trans, 'spacy')
 
+        # -------------------------------------------
+        # All the following tasks require a translation
+        # translation line, starting with
+        # heuristic alignment.
+        # -------------------------------------------
+            try:
+                if not args.no_align:
+                    alignments = heuristic_alignment(inst)
+                    if alignments:
+                        if args.aln_pngs:
+                            os.makedirs(args.aln_pngs, exist_ok=True)
+                            aln_png_path = os.path.join(args.aln_pngs, '{}_aln.png'.format(inst.id))
+                            alignment_to_png(inst, aln_png_path)
+                        align_count += 1
+                        xigt_add_bilingual_alignment(new_xigt_inst, inst.trans, 'heuristic')
 
-            if not args.no_align:
-                # Remove old alignments!
-                alignments = heuristic_alignment(inst)
-                if alignments:
-                    if args.aln_pngs:
-                        os.makedirs(args.aln_pngs, exist_ok=True)
-                        aln_png_path = os.path.join(args.aln_pngs, '{}_aln.png'.format(inst.id))
-                        alignment_to_png(inst, aln_png_path)
-                    align_count += 1
+                # Perform alignment evaluation
+                if old_alignments and inst.trans.alignments:
+                    eval_bilingual_alignments(inst, old_alignments, aln_eval)
 
-            # Perform alignment evaluation
-            if old_alignments and inst.trans.alignments:
-                eval_bilingual_alignments(inst, old_alignments, aln_eval)
+            except AlignException as ae:
+                ROOT_LOGGER.warning('Alignment failed for instance "{}": {}'.format(inst.id, ae))
 
-
-            # Only try projection if there
-            # are alignments.
+            # -------------------------------------------
+            # Projection tasks
+            #     Only try projection if there is alignment.
+            # -------------------------------------------
             if inst.trans.alignments:
 
+                # -- A) Attempt POS tag projection
                 if not args.no_posproject:
                     project_pos(inst)
+                    xigt_add_pos(new_xigt_inst, inst.gloss.subwords, GLOSS_SUBWORD_ID, 'project')
+                    xigt_add_pos(new_xigt_inst, inst.gloss, GLOSS_WORD_ID, 'project')
                     pos_project_count += 1
+
+                # -- B) Attempt dependency projection
                 if not args.no_dsproject:
-                    new_ds = project_ds(inst)
-                    ds_project_count += 1
+                    try:
+                        new_ds = project_ds(inst)
+                        xigt_add_dependencies(new_xigt_inst, inst.lang, 'project')
+                        ds_project_count += 1
+                    except DependencyException as de:
+                        ROOT_LOGGER.warning('Error in projecting dependency for instance "{}": {}'.format(inst.id, de))
 
             # Perform POS tag evaluation
             if old_lg_tags:
-                eval_pos(old_lg_tags, get_lg_tags(inst), lg_pos_eval)
+                eval_pos(old_lg_tags, [get_lg_tag(gw) for gw in inst.gloss], lg_pos_eval)
             if old_trans_tags:
                 eval_pos(old_trans_tags, inst.trans.tags, t_pos_eval)
 
@@ -142,14 +179,8 @@ if __name__ == '__main__':
                     inst.lang.dependency_structure.save_png(lang_ds_path)
 
 
-
-
-        except AlignException as ae:
-            ROOT_LOGGER.warning('Alignment failed for instance "{}": {}'.format(inst.id, ae))
-        except ProcessException as pe:
-            ROOT_LOGGER.warning('Processing failed for instance "{}": {}'.format(inst.id, pe))
-        except DependencyException as de:
-            ROOT_LOGGER.warning('Error in projecting dependency for instance "{}": {}'.format(inst.id, de))
+        new_xigt_inst.sort_tiers()
+        new_xc.append(new_xigt_inst)
 
     if not corp:
         ROOT_LOGGER.error("No instances found in corpus. Not writing output.")
@@ -169,5 +200,4 @@ if __name__ == '__main__':
 
         print("Preparing to write output.")
         with open(args.output, 'w') as out_f:
-            out_f.write(corpus_to_xigt(corp))
-
+            xigt.codecs.xigtxml.dump(out_f, new_xc)

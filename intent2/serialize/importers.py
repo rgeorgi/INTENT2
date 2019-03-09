@@ -396,9 +396,12 @@ def create_phrase_from_segments_alignments(id_to_object_mapping,
     #       group map.
     word_groups = sorted(word_to_segment_map.keys(), key=lambda word: word.index)
     phrase = Phrase()
+    string_mapping = {GlossWord.__name__:GLOSS_WORD_ID,
+                      LangWord.__name__:LANG_WORD_ID,
+                      TransWord.__name__:TRANS_WORD_ID}
     for aligned_word in word_groups:  # type: Word
         new_word = WordType(subwords=word_to_segment_map[aligned_word],
-                      id_=item_id('gw', aligned_word.index))
+                      id_=item_id(string_mapping[WordType.__name__], aligned_word.index+1))
         new_word.add_alignment(aligned_word)
         phrase.add_word(new_word)
     return phrase
@@ -532,7 +535,7 @@ def parse_trans_tier(inst, id_to_object_mapping):
     trans_phrases_tier = xigt_find(inst, type='translations')
 
     # If there's a translations words tier, use that.
-    trans_words_tier = xigt_find(inst, segmentation='t', type='words') # type: Item
+    trans_words_tier = xigt_find(inst, segmentation='t', type='words') # type: Tier
     if trans_words_tier:
         IMPORT_LOG.debug("trans-words tier found.")
         p = load_words(id_to_object_mapping,

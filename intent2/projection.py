@@ -174,7 +174,7 @@ def project_ds(inst: Instance):
 # -------------------------------------------
 
 # NOUN > VERB > ADJ > ADV > PRON > DET > ADP > CONJ > PRT > NUM > PUNC > X
-precedence = ['PROPN', 'NOUN','VERB', 'ADJ', 'ADV', 'PRON', 'DET', 'ADP', 'CONJ', 'CCONJ', 'PART', 'NUM', 'PUNC', 'X', 'SYM', 'INTJ', 'PUNCT']
+precedence = ['PROPN', 'NOUN','VERB', 'ADJ', 'ADV', 'PRON', 'DET', 'ADP', 'CONJ', 'CCONJ', 'PART', 'PRT', 'NUM', 'PUNC', 'X', 'SYM', 'INTJ', 'PUNCT']
 
 def project_pos(inst: Instance):
     """
@@ -185,8 +185,6 @@ def project_pos(inst: Instance):
     # There must be alignments present to project
     assert inst.trans.alignments
     process_trans_if_needed(inst)
-
-    projected_tags = [None for gw in inst.gloss]
 
     # Now, iterate over the translation words, and project their
     for trans_w in inst.trans:
@@ -222,20 +220,19 @@ def clear_bilingual_alignments(inst: Instance):
         for aligned_item in list(trans_word.alignments): # type: Union[Word, SubWord]
             trans_word.remove_alignment(aligned_item)
 
-def clear_pos_tags(inst: Instance):
+def clear_pos_tags(p: Phrase):
+    for word in p:
+        word.pos = None
+        for subword in word.subwords:
+            subword.pos = None
+
+def clear_all_pos_tags(inst: Instance):
     """
     Remove all POS tags from an instance
     """
-    for lang_word in inst.lang:
-        lang_word.pos = None
-        for lang_subword in lang_word.subwords:
-            lang_subword.pos = None
-    for gloss_word in inst.gloss:
-        gloss_word.pos = None
-        for gloss_subword in gloss_word.subwords:
-            gloss_subword.pos = None
-    for trans_word in inst.trans:
-        trans_word.pos = None
+    clear_pos_tags(inst.lang)
+    clear_pos_tags(inst.gloss)
+    clear_pos_tags(inst.trans)
 
 # -------------------------------------------
 # UnitTests

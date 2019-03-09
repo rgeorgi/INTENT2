@@ -1,8 +1,9 @@
 from setuptools import setup, find_packages
+import intent2
 
 setup(
     name="intent",
-    version='2.0a6',
+    version=intent2.__version__,
     packages=find_packages(),
     scripts=['scripts/intent',
              'scripts/merge-xigt',

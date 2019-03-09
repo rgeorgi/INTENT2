@@ -106,7 +106,7 @@ def extract_gloss_word_feats(gloss_w: GlossWord, vocab: dict):
     return X_word
 
 def describe_logreg(model: LogisticRegression,
-                    vectorizer: CountVectorizer=None,
+                    vectorizer: DictVectorizer,
                     n: int=10):
     """
     Given a logistic regression model, print out the categories

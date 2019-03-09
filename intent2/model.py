@@ -40,19 +40,19 @@ class AlignableMixin(object):
         self.alignments -= {other}
         other.alignments -= {self}
 
-    @property
-    def aligned_words(self):
+    def aligned_words(self, word_type: type=None):
         """
         Return the set of alignments that this item is aligned to,
         where the aligned item is a type of class word. If the target
         was a subword, find its parent word.
+
+        :rtype: Set[Word]
         """
         alignments = set([])
         for aligned_item in self.alignments: # type: Union[Word, SubWord]
-            if isinstance(aligned_item, SubWord):
-                alignments.add(aligned_item.word)
-            else:
-                alignments.add(aligned_item)
+            word = aligned_item.word if isinstance(aligned_item, SubWord) else aligned_item
+            if (not word_type) or isinstance(word, word_type):
+                alignments.add(word)
         return alignments
 
 class IdMixin(object):
@@ -703,11 +703,9 @@ class Phrase(list, IdMixin, DependencyMixin):
     def subwords(self):
         """
         Return all the subwords
-        :rtype: Generator[SubWord]
+        :rtype: List[SubWord]
         """
-        for word in self:
-            for subword in word:
-                yield subword
+        return [subword for word in self for subword in word]
 
     @property
     def alignments(self):
@@ -721,8 +719,7 @@ class Phrase(list, IdMixin, DependencyMixin):
                 alignments.add((word, aligned_item))
         return alignments
 
-    @property
-    def aligned_words(self):
+    def aligned_words(self, word_type: type=None):
         """
         Return all alignments, but map subwords to their
         parent words.
@@ -731,7 +728,7 @@ class Phrase(list, IdMixin, DependencyMixin):
         """
         alignments = set([])
         for word in self:
-            for aligned_word in word.aligned_words:
+            for aligned_word in word.aligned_words(word_type):
                 alignments.add((word, aligned_word))
         return alignments
 

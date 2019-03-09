@@ -6,6 +6,8 @@ from typing import Set, Tuple
 
 from sklearn.metrics import confusion_matrix, classification_report
 
+import numpy as np
+
 from intent2.model import AlignableMixin, Instance, SubWord, Word, TransWord
 
 
@@ -19,12 +21,29 @@ class PRFEval(object):
         self.true = []
         self.pred = []
 
+        self.labels = set([])
+
     @property
     def precision(self):
         if self.system_counts == 0:
             return 0
         else:
             return self.matches / self.system_counts
+
+    def add_pair(self, gold, pred):
+
+        if gold is not None:
+
+            self.true.append(gold)
+            self.pred.append(pred if pred else 'NONE')
+
+            self.labels.add(gold)
+            self.compares += 1
+            if pred:
+                self.system_counts += 1
+            if gold == pred:
+                self.matches += 1
+            self.gold_counts += 1
 
     @property
     def recall(self):
@@ -91,7 +110,7 @@ def eval_bilingual_alignments(inst: Instance, aln_gold, count_dict: PRFEval):
     assert not (word_alignment and subword_alignment)
 
     if word_alignment:
-        aln_hyp = inst.trans.aligned_words
+        aln_hyp = inst.trans.aligned_words()
     else:
         aln_hyp = {(src, tgt) for src, tgt in inst.trans.alignments if isinstance(tgt, SubWord)}
 
@@ -100,27 +119,9 @@ def eval_bilingual_alignments(inst: Instance, aln_gold, count_dict: PRFEval):
     count_dict.gold_counts += len(aln_gold)
     count_dict.instances += 1
 
-def get_lg_tags(inst: Instance):
-    """
-    Retrieve the gold tags from the instance.
-
-    These will probably be on the gloss phrase, but in case they were
-    provided on the lang instance, return those instead.
-
-    :param inst:
-    :return:
-    """
-    lang_tags = inst.lang.tags
-    gloss_tags = inst.gloss.tags
-
-    if set(filter(None, lang_tags)):
-        return lang_tags
-    else:
-        return gloss_tags
 
 def eval_pos(gold_tags, tgt_tags,
-             eval: PRFEval,
-             remap_dict = None):
+             eval: PRFEval):
     """
     Evaluate part of speech tags
 
@@ -136,25 +137,11 @@ def eval_pos(gold_tags, tgt_tags,
         return
     eval.instances += 1
 
-    remap_dict = {} if remap_dict is None else remap_dict
-
-    eval.true.extend(gold_tags)
-    eval.pred.extend(tgt_tags)
-
     for gold_tag, tgt_tag in zip(gold_tags, tgt_tags):  # type: Word, Word
-
-         # If a remap dict is provided, remap the gold tags
-        gold_tag = remap_dict.get(gold_tag, gold_tag)
 
         # Skip instances where the gold tag is None
         if gold_tag is not None:
-            if tgt_tag is not None:
-                eval.system_counts += 1
-
-            if gold_tag == tgt_tag:
-                eval.matches += 1
-
-            eval.gold_counts += 1
+            eval.add_pair(gold_tag, tgt_tag)
 
 
 def eval_pos_report(eval: PRFEval, tier_name: str):
@@ -162,9 +149,15 @@ def eval_pos_report(eval: PRFEval, tier_name: str):
     Print out the evaluation metrics for the POS tagging.
     """
     ret_str = 'POS Evaluation ({}):\n'.format(tier_name)
-    # ret_str += eval.count_string()
-    # ret_str += eval.prf_string()
-    # return ret_str
+    ret_str += eval.count_string()
+    ret_str += eval.prf_string()
+
+    # ret_str += pretty_print_cm(confusion_matrix(eval.true, eval.pred), labels=sorted(eval.labels))
+    labels = sorted(eval.labels)
+    ret_str += pretty_print_cm(confusion_matrix(eval.true,
+                                                eval.pred, labels=labels),
+                               labels)
+
     ret_str += classification_report(eval.true, eval.pred)
     return ret_str
 
@@ -179,10 +172,11 @@ def eval_aln_report(eval: PRFEval):
     ret_str = 'Alignment evaluation:\n'
     ret_str += eval.count_string()
     ret_str += eval.prf_string()
+
     return ret_str
 
 
-def print_cm(cm, labels, hide_zeroes=False, hide_diagonal=False, hide_threshold=None):
+def pretty_print_cm(cm, labels, hide_zeroes=False, hide_diagonal=False, hide_threshold=None):
     """
     pretty print for confusion matrixes
 
@@ -196,24 +190,29 @@ def print_cm(cm, labels, hide_zeroes=False, hide_diagonal=False, hide_threshold=
 
     if len(fst_empty_cell) < len(empty_cell):
         fst_empty_cell = " " * (len(empty_cell) - len(fst_empty_cell)) + fst_empty_cell
+
     # Print header
-    print("    " + fst_empty_cell, end=" ")
+    ret_str = ''
+    ret_str += "    " + fst_empty_cell + " "
     # End CHANGES
 
     for label in labels:
-        print("%{0}s".format(columnwidth) % label, end=" ")
+        ret_str += "{{:{}}} ".format(columnwidth).format(label)
 
-    print()
+    ret_str += '\n'
     # Print rows
     for i, label1 in enumerate(labels):
-        print("    %{0}s".format(columnwidth) % label1, end=" ")
+        ret_str += "    {{:{}}} ".format(columnwidth).format(label1)
         for j in range(len(labels)):
-            cell = "%{0}.1f".format(columnwidth) % cm[i, j]
+            cell = "{{:{}d}}".format(columnwidth).format(cm[i,j])
             if hide_zeroes:
                 cell = cell if float(cm[i, j]) != 0 else empty_cell
             if hide_diagonal:
                 cell = cell if i != j else empty_cell
             if hide_threshold:
                 cell = cell if cm[i, j] > hide_threshold else empty_cell
-            print(cell, end=" ")
-        print()
+            ret_str += cell + " "
+
+        ret_str += "\n"
+
+    return ret_str

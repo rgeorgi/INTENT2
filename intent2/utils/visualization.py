@@ -103,10 +103,10 @@ def draw_alignment(inst: Instance):
     phrase_to_subgraph(inst.gloss, height_sep * 1)
     phrase_to_subgraph(inst.trans, 0)
 
-    for tw, gw in inst.trans.aligned_words: # type: Word, Word
+    for tw, gw in inst.trans.aligned_words(): # type: Word, Word
         dot.edge(tw.id, gw.id)
 
-    for lw, gw in inst.lang.aligned_words: # type: Word, Word
+    for lw, gw in inst.lang.aligned_words(): # type: Word, Word
         dot.edge(lw.id, gw.id)
 
 

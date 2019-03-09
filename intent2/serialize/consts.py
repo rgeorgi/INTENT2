@@ -23,7 +23,7 @@ ALN_KEY = 'alignment'
 xigt_conventions = {LANG_KEY:{PHRASE_KEY: {TYPE_KEY:'phrases', ID_KEY:'p'},
                               WORDS_KEY: {TYPE_KEY:'words', ID_KEY:'w', SEG_KEY:'p'},
                               SUBWORDS_KEY: {TYPE_KEY:'morphemes', ID_KEY:'m', SEG_KEY:'w'}},
-                    GLOSS_KEY:{WORDS_KEY: {TYPE_KEY:'glosses', ID_KEY:'gw'},
+                    GLOSS_KEY:{WORDS_KEY: {TYPE_KEY:'glosses', ID_KEY:'gw', ALN_KEY:'w'},
                                 SUBWORDS_KEY: {TYPE_KEY:'glosses', ID_KEY:'g', ALN_KEY:'m', SEG_KEY:'gw'}},
                     TRANS_KEY:{PHRASE_KEY: {TYPE_KEY:'translations', ID_KEY:'t'},
                                WORDS_KEY: {TYPE_KEY:'words', ID_KEY:'tw', SEG_KEY:'t'}
@@ -44,3 +44,4 @@ LANG_WORD_ID = get_xigt_str([LANG_KEY, WORDS_KEY, ID_KEY])
 TRANS_WORD_ID = get_xigt_str([TRANS_KEY, WORDS_KEY, ID_KEY])
 
 GLOSS_SUBWORD_ID = get_xigt_str([GLOSS_KEY, SUBWORDS_KEY, ID_KEY])
+GLOSS_WORD_ID = get_xigt_str([GLOSS_KEY, WORDS_KEY, ID_KEY])

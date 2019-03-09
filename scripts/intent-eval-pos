@@ -8,20 +8,21 @@ import os, glob
 import sys
 from argparse import ArgumentParser
 
-from intent2.alignment import heuristic_alignment
+from intent2.alignment import heuristic_alignment, AlignException
 
 from intent2.eval import PRFEval, eval_pos, eval_pos_report
-from sklearn.feature_extraction import DictVectorizer
 
 from intent2.projection import project_pos
 from intent2.utils.cli_args import existsfile, existsdir, globfiles, get_dir_files
 from intent2.serialize.importers import parse_xigt_corpus
-from intent2.classification import describe_logreg, LRWrapper, PreTokenizedCountVectorizer, extract_gloss_word_feats
+from intent2.classification import LRWrapper
 from xigt.codecs.xigtxml import load
-from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
-import pickle
 
 from intent2.utils.pos_tags import TagsetMapping
+
+import logging
+logging.basicConfig()
+LOG = logging.getLogger()
 
 
 def map_pos(pos, tagmap: TagsetMapping):
@@ -75,7 +76,11 @@ if __name__ == '__main__':
 
                     gold_tags = [map_pos(tag, args.tagmap) for tag in inst.gloss.tags]
                     pred_tags = lr.classify(inst.gloss)
-                    heuristic_alignment(inst)
+
+                    try:
+                        heuristic_alignment(inst)
+                    except AlignException as ae:
+                        LOG.warning(ae)
 
                     if inst.trans.alignments:
                         project_pos(inst)

@@ -115,6 +115,7 @@ INTF	ADJ
 
 # Interjection
 INJ	PART
+INTJ PART
 
 # Reduplication
 RDP	PART
