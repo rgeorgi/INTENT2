@@ -174,7 +174,7 @@ def project_ds(inst: Instance):
 # -------------------------------------------
 
 # NOUN > VERB > ADJ > ADV > PRON > DET > ADP > CONJ > PRT > NUM > PUNC > X
-precedence = ['PROPN', 'NOUN','VERB', 'ADJ', 'ADV', 'PRON', 'DET', 'ADP', 'CONJ', 'CCONJ', 'PART', 'NUM', 'PUNC', 'X', 'INTJ', 'PUNCT']
+precedence = ['PROPN', 'NOUN','VERB', 'ADJ', 'ADV', 'PRON', 'DET', 'ADP', 'CONJ', 'CCONJ', 'PART', 'NUM', 'PUNC', 'X', 'SYM', 'INTJ', 'PUNCT']
 
 def project_pos(inst: Instance):
     """
@@ -186,6 +186,8 @@ def project_pos(inst: Instance):
     assert inst.trans.alignments
     process_trans_if_needed(inst)
 
+    projected_tags = [None for gw in inst.gloss]
+
     # Now, iterate over the translation words, and project their
     for trans_w in inst.trans:
         for aligned_gloss in trans_w.alignments: # type: SubWord
@@ -194,7 +196,7 @@ def project_pos(inst: Instance):
             # a part-of-speech tag, or if it does have one, that
             # it is a lower precedent than the proposed aligned tag.
             if (not aligned_gloss.pos or
-                precedence.index(aligned_gloss.pos) > precedence.index(trans_w.pos)):
+                    precedence.index(aligned_gloss.pos) > precedence.index(trans_w.pos)):
                 aligned_gloss.pos = trans_w.pos
 
     combine_subword_tags(inst.gloss)

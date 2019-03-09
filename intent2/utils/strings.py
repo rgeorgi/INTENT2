@@ -55,6 +55,9 @@ def is_character_identical(stringA, stringB, skip_re='[#,\-=\.\s]'):
     """
     return re.sub(skip_re, '', stringA).lower() == re.sub(skip_re, '', stringB).lower()
 
+# -------------------------------------------
+# Test Cases
+# -------------------------------------------
 
 class CharacterIdenticalTests(unittest.TestCase):
     def test_positive(self):
@@ -70,6 +73,8 @@ class SubWordCreationTests(unittest.TestCase):
                     SubWord('clitic')]
         self.assertListEqual(word_str_to_subwords(w_str),
                              subwords)
+
+# -------------------------------------------
 
 def subword_str_to_subword(subword_string, id_=None):
     """

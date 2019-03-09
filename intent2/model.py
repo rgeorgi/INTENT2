@@ -608,7 +608,7 @@ class SubWord(TaggableMixin, AlignableMixin, MutableStringMixin, LemmatizableMix
         """
         Return the period-or-slash-delineated portions of a sub-word.
         """
-        return ((self.index, part) for part in re.split('[\./]', self.string) if part)
+        return ((self.index, part) for part in re.split('[\./\(\)]+', self.string) if part)
 
     @property
     def hyphenated(self):
@@ -776,7 +776,18 @@ class Instance(IdMixin):
     def __repr__(self):
         return '<IGT Instance with {} words>'.format(len(self.lang))
 
-
+    def has_lang_gloss_aln(self) -> bool:
+        """
+        Return whether this instance has alignment
+        between lang and gloss lines.
+        """
+        if not (self.lang and self.gloss):
+            return False
+        for lw in self.lang:
+            for aln_elt in lw.alignments:
+                if isinstance(aln_elt, GlossWord):
+                    return True
+        return False
 
 class Corpus(list):
     """

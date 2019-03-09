@@ -20,11 +20,13 @@ pip install -r requirements.txt
 pip install .
 ```
 
-**N.B.** Currently, the code is in an alpha stage. Not all of the functionality is implemented, and what is may contain bugs.
+This will install the `intent` script, as well as a `merge-xigt` script.
+
+N.B.** Currently, the code is in an alpha stage. Not all of the functionality is implemented, and what is may contain bugs.
 
 ## Running Enrichment
 
-In order to enrich a compatible [Xigt](https://github.com/xigt/xigt)-XML document, you may install
+In order to enrich a compatible [Xigt](https://github.com/xigt/xigt)-XML document, you 
 
 ## Input Requirements
 

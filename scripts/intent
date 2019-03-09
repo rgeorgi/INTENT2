@@ -3,10 +3,12 @@ import os
 import sys
 from collections import defaultdict
 
+from intent.utils.argutils import existsfile
 from intent2.eval import eval_bilingual_alignments, eval_aln_report, get_lg_tags, eval_pos, PRFEval, \
     eval_pos_report
 from intent2.exceptions import ProcessException
 from intent2.projection import project_pos, project_ds, clear_bilingual_alignments, clear_pos_tags
+from intent2.classification import LRWrapper
 from intent2.model import DependencyException
 from intent2.serialize.importers import parse_xigt_corpus
 from intent2.serialize.exporters import corpus_to_xigt
@@ -32,6 +34,9 @@ if __name__ == '__main__':
     p.add_argument('--no-align', action='store_true', help="Don't perform bilingual alignment. Also disables projection.")
     p.add_argument('--no-posproject', action='store_true', help="Disable POS projection.")
     p.add_argument('--no-dsproject', action='store_true', help="Disable DS projection")
+    p.add_argument('--no-posclass', action='store_true', help='Disable POS classification.')
+
+    p.add_argument('--pos-class', type=existsfile, help='Path to the gloss-line classifier model.')
 
     p.add_argument('--ignore-import-errors', action='store_true', default=False, help='Skip instances that cause errors on import. They will not be ingested')
     p.add_argument('--ds-thresh', default=0.0, type=float, help='Threshold')
@@ -73,6 +78,10 @@ if __name__ == '__main__':
     lg_pos_eval = PRFEval()
     t_pos_eval = PRFEval()
 
+    # Initialize the POS classifier.
+    pos_classifier = None if not args.pos_class else LRWrapper.load(args.pos_class)
+
+
     for inst in corp:
 
         old_alignments = inst.trans.alignments
@@ -82,6 +91,10 @@ if __name__ == '__main__':
         clear_bilingual_alignments(inst)
 
         try:
+
+            # Classify the gloss line:
+
+
             if not args.no_align:
                 # Remove old alignments!
                 alignments = heuristic_alignment(inst)

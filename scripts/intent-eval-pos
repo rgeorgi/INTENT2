@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""
+This script will take some number of Xigt-XML files as input,
+extract word-level POS tags, and train a logistic regression
+to classify them.
+"""
+import os, glob
+import sys
+from argparse import ArgumentParser
+
+from intent2.alignment import heuristic_alignment
+
+from intent2.eval import PRFEval, eval_pos, eval_pos_report
+from sklearn.feature_extraction import DictVectorizer
+
+from intent2.projection import project_pos
+from intent2.utils.cli_args import existsfile, existsdir, globfiles, get_dir_files
+from intent2.serialize.importers import parse_xigt_corpus
+from intent2.classification import describe_logreg, LRWrapper, PreTokenizedCountVectorizer, extract_gloss_word_feats
+from xigt.codecs.xigtxml import load
+from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
+import pickle
+
+from intent2.utils.pos_tags import TagsetMapping
+
+
+def map_pos(pos, tagmap: TagsetMapping):
+    returned = tagmap.get(pos, pos)
+    return returned
+
+def get_pattern(pattern):
+    return glob.glob(pattern)
+
+if __name__ == '__main__':
+    p = ArgumentParser()
+    p.add_argument('-f', '--file', action='append', help='Provide a particular file for input', type=existsfile, default=[])
+    p.add_argument('-ef', '--exclude-file', action='append', help='Exclude certain files from testing', type=existsfile, default=[])
+    p.add_argument('-p', '--pattern', help='Add a glob pattern.', type=globfiles, default=[])
+    p.add_argument('-d', '--dir', action='append', help='Specify a directory containing the files.', type=existsdir, default=[])
+    p.add_argument('-r', '--recursive', action='store_true', help='If a directory is specified, recursively search')
+    p.add_argument('-c', '--classifier', help='Load the classifier', required=True, type=existsfile)
+
+    p.add_argument('--tagmap', help='Map POS tags in the testing data using this tagmap.', type=TagsetMapping.load, default={})
+
+
+    args = p.parse_args()
+
+    # The files to process can be any combination of globs, a directory, or
+    pathlist = args.file + list(get_dir_files(args.dir, ext_filter='.xml', recursive=args.recursive)) + args.pattern
+    for path in args.exclude_file:
+        pathlist.remove(path)
+    if not pathlist:
+        print('No files were found. Please check your args and try again.')
+        sys.exit(1)
+
+    X_text = []
+    y = []
+
+    # Load the classifier
+    lr = LRWrapper.load(args.classifier)
+
+    # Load the files.
+    class_ev = PRFEval()
+    proj_ev = PRFEval()
+
+    for path in pathlist:
+        with open(path, 'r') as xigt_f:
+            xc = load(xigt_f)
+            c = parse_xigt_corpus(xc)
+            for inst in c:
+
+                # Collect features from the instances.
+                if inst.gloss and list(filter(bool, inst.gloss.tags)):
+
+
+                    gold_tags = [map_pos(tag, args.tagmap) for tag in inst.gloss.tags]
+                    pred_tags = lr.classify(inst.gloss)
+                    heuristic_alignment(inst)
+
+                    if inst.trans.alignments:
+                        project_pos(inst)
+                        proj_tags = inst.gloss.tags
+                    else:
+                        proj_tags = [None for gw in inst.gloss]
+
+                    eval_pos(gold_tags, proj_tags, proj_ev)
+                    eval_pos(gold_tags, pred_tags, class_ev)
+
+
+    print(eval_pos_report(class_ev, 'classifier'))
+    print(eval_pos_report(proj_ev, 'projection'))

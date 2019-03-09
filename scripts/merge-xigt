@@ -4,13 +4,16 @@ This script is used to take
 """
 import sys
 from argparse import ArgumentParser
-from intent2.utils.cli_args import existsfile
+from intent2.utils.cli_args import existsfile, existsdir, globfiles, get_dir_files
 from xigt.codecs import xigtxml
 from xigt.model import Igt, XigtCorpus, Item, Tier
 from intent2.xigt_helpers import xigt_find
 from collections import defaultdict
-from typing import List, Dict, Iterable
+from typing import List, Dict, Iterable, Set
 import string
+import logging
+logging.basicConfig()
+LOG = logging.getLogger()
 
 
 def merge_files(input_paths, output_path):
@@ -78,12 +81,18 @@ class MergeMap(object):
         return self._items_by_tier.get((igt_id, tier_id), defaultdict(list))
 
     def get_tiers_by_id(self, igt_id, tier_id):
+        """
+        Retrieve a list of tiers that share the same IGT and tier IDs.
+        """
         return self._tiers.get((igt_id, tier_id), [])
 
     def get_tiers_by_type(self, igt_id, tier_type) -> Dict[str,List[Tier]]:
         return self._types.get((igt_id, tier_type), defaultdict(list))
 
-    def get_tiers_by_type_and_id(self, igt_id, tier_type, tier_id):
+    def get_tier_list_by_type(self, igt_id, tier_type) -> List[Tier]:
+        return list(self._types.get((igt_id, tier_type), {}).values())
+
+    def get_tiers_by_type_and_id(self, igt_id, tier_type, tier_id) -> List[Tier]:
         return self._types.get((igt_id, tier_type), {}).get(tier_id, [])
 
     def get_instances(self, igt_id):
@@ -166,43 +175,58 @@ def uniqify_tiers(tier_list: List[Tier], id_base) -> List[Tier]:
         return ret_tiers
 
 
-def merge_instances(inst_id: str, instance_list: List[Igt], mm: MergeMap) -> Igt:
+def merge_instances(igt_id: str, instance_list: List[Igt], mm: MergeMap) -> Igt:
     """
     Given a list of instances of the same ID, combine their tiers in a logical way.
     """
-    new_instance = Igt(id=inst_id)
+    new_instance = Igt(id=igt_id)
+    LOG.info('Merging instances for inst_id {}'.format(igt_id))
 
     # Keep track of the tier_ids we have yet to process.
-    remaining_tiers = {tier.id for tier_list in [inst.tiers for inst in instance_list] for tier in tier_list}
+    remaining_tiers = [tier for tier_list in [inst.tiers for inst in instance_list] for tier in tier_list] # type: Set[Tier]
 
     def remove_tier_id(tier_id):
         nonlocal remaining_tiers
-        remaining_tiers -= {tier_id}
+        remaining_tiers = [tier for tier in remaining_tiers if tier.id != tier_id]
 
     def merge_and_add_by_type(type_str):
-        type_tiers = merge_tiers_by_type(inst_id, type_str, mm)
+        type_tiers = merge_tiers_by_type(igt_id, type_str, mm)
         for tier in type_tiers:
             new_instance.append(tier)
             remove_tier_id(tier.id)
 
     def merge_and_add_by_id(tier_id):
-        tiers = mm.get_tiers_by_id(inst_id, tier_id)
-        merged_tier = merge_tiers(inst_id, tier_id, tiers, mm)
-        new_instance.append(merged_tier)
+        tiers = mm.get_tiers_by_id(igt_id, tier_id)
+        merged_tier = merge_tiers(igt_id, tier_id, tiers, mm)
+        if merged_tier.items:
+            new_instance.append(merged_tier)
         remove_tier_id(tier_id)
 
 
     def merge_and_add_by_find(new_tier_id, **kwargs):
         tiers = list(filter(None, [xigt_find(inst, **kwargs) for inst in instance_list]))
-        new_instance.append(merge_tiers(inst_id, new_tier_id, tiers, mm))
+        new_tier = merge_tiers(igt_id, new_tier_id, tiers, mm)
+        if new_tier.items:
+            new_instance.append(new_tier)
         remove_tier_id(new_tier_id)
         for tier in tiers:
             remove_tier_id(tier.id)
 
-    def add_unique_tiers(tier_id):
-        tiers = mm.get_tiers_by_id(inst_id, tier_id)
-        remove_tier_id(tier_id)
-        for unique_tier in uniqify_tiers(tiers, tier_id):
+    def add_unique_tiers(tier_aln, tier_type):
+        """
+        Attempt to find tiers that have not been added already,
+        and rename their IDs so that they don't collide.
+        """
+        tiers = [tier for tier_list in mm.get_tier_list_by_type(igt_id, tier_type)
+                 for tier in tier_list
+                 if tier.alignment == tier_aln]
+
+        for tier in tiers:
+            remove_tier_id(tier.id)
+
+        base_id = '{}_{}'.format(tier_aln, tier_type) if tier_aln is not None else tier_type
+
+        for unique_tier in uniqify_tiers(tiers, base_id):
             new_instance.append(unique_tier)
             remove_tier_id(unique_tier.id)
 
@@ -227,8 +251,8 @@ def merge_instances(inst_id: str, instance_list: List[Igt], mm: MergeMap) -> Igt
     # -- 6) Regularize
 
     # -- 4) Now, add enrichment tiers.
-    for tier_id in sorted(list(remaining_tiers)):
-        add_unique_tiers(tier_id)
+    for tier_aln, tier_type in {(tier.alignment, tier.type) for tier in remaining_tiers}:
+        add_unique_tiers(tier_aln, tier_type)
 
     return new_instance
 
@@ -237,9 +261,26 @@ def merge_instances(inst_id: str, instance_list: List[Igt], mm: MergeMap) -> Igt
 
 if __name__ == '__main__':
     p = ArgumentParser()
-    p.add_argument('-i', '--input', help='Input files.', action='append', type=existsfile, required=True)
+    p.add_argument('-f', '--file', action='append', help='Provide a particular file for input', type=existsfile, default=[])
+    p.add_argument('-p', '--pattern', help='Add a glob pattern.', type=globfiles, default=[])
+    p.add_argument('-d', '--dir', action='append', help='Specify a directory containing the files.', type=existsdir, default=[])
+    p.add_argument('-r', '--recursive', action='store_true')
+    p.add_argument('-v', '--verbose', action='count', help='Increase verbosity')
+
     p.add_argument('-o', '--output', help='Output file.', required=True)
 
     args = p.parse_args()
 
-    merge_files(args.input, args.output)
+    if args.verbose == 1:
+        LOG.setLevel(logging.INFO)
+    if args.verbose >= 2:
+        LOG.setLevel(logging.DEBUG)
+
+
+    # The files to process can be any combination of globs, a directory, or
+    pathlist = args.file + list(get_dir_files(args.dir, ext_filter='.xml', recursive=args.recursive)) + args.pattern
+    if not pathlist:
+        print('No files were found. Please check your args and try again.')
+        sys.exit(1)
+
+    merge_files(pathlist, args.output)

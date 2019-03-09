@@ -3,6 +3,9 @@ Use this for evaluating different aspects of intent
 """
 from collections import defaultdict
 from typing import Set, Tuple
+
+from sklearn.metrics import confusion_matrix, classification_report
+
 from intent2.model import AlignableMixin, Instance, SubWord, Word, TransWord
 
 
@@ -13,6 +16,8 @@ class PRFEval(object):
         self.gold_counts = 0
         self.compares = 0
         self.instances = 0
+        self.true = []
+        self.pred = []
 
     @property
     def precision(self):
@@ -56,6 +61,9 @@ class PRFEval(object):
 
     def __bool__(self):
         return self.instances != 0
+
+    def confusion_matrix(self):
+        return confusion_matrix(self.true, self.pred)
 
 
 def eval_bilingual_alignments(inst: Instance, aln_gold, count_dict: PRFEval):
@@ -130,6 +138,9 @@ def eval_pos(gold_tags, tgt_tags,
 
     remap_dict = {} if remap_dict is None else remap_dict
 
+    eval.true.extend(gold_tags)
+    eval.pred.extend(tgt_tags)
+
     for gold_tag, tgt_tag in zip(gold_tags, tgt_tags):  # type: Word, Word
 
          # If a remap dict is provided, remap the gold tags
@@ -151,8 +162,10 @@ def eval_pos_report(eval: PRFEval, tier_name: str):
     Print out the evaluation metrics for the POS tagging.
     """
     ret_str = 'POS Evaluation ({}):\n'.format(tier_name)
-    ret_str += eval.count_string()
-    ret_str += eval.prf_string()
+    # ret_str += eval.count_string()
+    # ret_str += eval.prf_string()
+    # return ret_str
+    ret_str += classification_report(eval.true, eval.pred)
     return ret_str
 
 
@@ -167,3 +180,40 @@ def eval_aln_report(eval: PRFEval):
     ret_str += eval.count_string()
     ret_str += eval.prf_string()
     return ret_str
+
+
+def print_cm(cm, labels, hide_zeroes=False, hide_diagonal=False, hide_threshold=None):
+    """
+    pretty print for confusion matrixes
+
+    Via https://gist.github.com/zachguo/10296432
+    """
+    columnwidth = max([len(x) for x in labels] + [5])  # 5 is value length
+    empty_cell = " " * columnwidth
+
+    # Begin CHANGES
+    fst_empty_cell = (columnwidth - 3) // 2 * " " + "t/p" + (columnwidth - 3) // 2 * " "
+
+    if len(fst_empty_cell) < len(empty_cell):
+        fst_empty_cell = " " * (len(empty_cell) - len(fst_empty_cell)) + fst_empty_cell
+    # Print header
+    print("    " + fst_empty_cell, end=" ")
+    # End CHANGES
+
+    for label in labels:
+        print("%{0}s".format(columnwidth) % label, end=" ")
+
+    print()
+    # Print rows
+    for i, label1 in enumerate(labels):
+        print("    %{0}s".format(columnwidth) % label1, end=" ")
+        for j in range(len(labels)):
+            cell = "%{0}.1f".format(columnwidth) % cm[i, j]
+            if hide_zeroes:
+                cell = cell if float(cm[i, j]) != 0 else empty_cell
+            if hide_diagonal:
+                cell = cell if i != j else empty_cell
+            if hide_threshold:
+                cell = cell if cm[i, j] > hide_threshold else empty_cell
+            print(cell, end=" ")
+        print()

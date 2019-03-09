@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""
+This script will take some number of Xigt-XML files as input,
+extract word-level POS tags, and train a logistic regression
+to classify them.
+"""
+import os, glob
+import sys
+from argparse import ArgumentParser
+
+from intent2.projection import clear_pos_tags, clear_bilingual_alignments, project_pos
+
+from intent2.alignment import heuristic_alignment, AlignException
+from sklearn.feature_extraction import DictVectorizer
+
+from intent2.utils.cli_args import existsfile, existsdir, globfiles, get_dir_files
+from intent2.serialize.importers import parse_xigt_corpus
+from intent2.classification import describe_logreg, LRWrapper, PreTokenizedCountVectorizer, extract_gloss_word_feats
+from xigt.codecs.xigtxml import load
+from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
+import pickle
+
+from intent2.utils.pos_tags import TagsetMapping
+
+import logging
+logging.basicConfig()
+LOG = logging.getLogger()
+
+
+def map_pos(pos, tagmap: TagsetMapping):
+    returned = tagmap.get(pos, pos)
+    return returned
+
+def get_pattern(pattern):
+    return glob.glob(pattern)
+
+if __name__ == '__main__':
+    p = ArgumentParser()
+    p.add_argument('-f', '--file', action='append', help='Provide a particular file for input', type=existsfile, default=[])
+    p.add_argument('-ef', '--exclude-file', action='append', help='Exclude certain files from training', type=existsfile, default=[])
+    p.add_argument('-p', '--pattern', help='Add a glob pattern.', type=globfiles, default=[])
+    p.add_argument('-d', '--dir', action='append', help='Specify a directory containing the files.', type=existsdir, default=[])
+    p.add_argument('-r', '--recursive', action='store_true', help='If a directory is specified, recursively search')
+    p.add_argument('-o', '--output', help='Store the classifier', required=True)
+    p.add_argument('--vocab', help='Use a dictionary of word--tag probabilities to help with unigram POS probs.')
+    p.add_argument('-vf', '--vectors', help='Log the training vectors to this file.')
+    p.add_argument('-v', '--verbose', help='Increase verbosity', action='count', default=0)
+    p.add_argument('--tagmap', help='Map POS tags in the training data using this tagmap.', type=TagsetMapping.load, default={})
+    p.add_argument('--maxiter', help='Max iterations for training.', default=1000)
+
+    p.add_argument('--method', choices=['gold', 'aln', 'both'], help='Use gold-standard annotations, high-precision heuristic alignments, or both.', default='gold')
+
+    args = p.parse_args()
+
+    # The files to process can be any combination of globs, a directory, or
+    pathlist = args.file + list(get_dir_files(args.dir, ext_filter='.xml', recursive=args.recursive)) + args.pattern
+    for path in args.exclude_file:
+        pathlist.remove(path)
+    if not pathlist:
+        print('No files were found. Please check your args and try again.')
+        sys.exit(1)
+
+    # Set verbosity
+    if args.verbose == 1:
+        LOG.setLevel(logging.INFO)
+    if args.verbose >= 2:
+        LOG.setLevel(logging.DEBUG)
+
+
+    X_text = []
+    y = []
+
+    vocab = {}
+    if args.vocab:
+        with open(args.vocab, 'rb') as f:
+            vocab = pickle.load(f)
+
+
+    # Use gold tags
+    use_gold_tags = args.method in {'gold', 'both'}
+    use_proj_tags = args.method in {'gold', 'both'}
+    use_both_tags = args.method == 'both'
+
+    # Load the files.
+    for path in pathlist:
+        with open(path, 'r') as xigt_f:
+            xc = load(xigt_f)
+            c = parse_xigt_corpus(xc)
+            for inst in c:
+
+                # Collect features from the instances.
+                if inst.gloss:
+
+                    inst_X = []
+                    gold_y = []
+                    pred_y = []
+
+                    for gloss_w in inst.gloss:
+                        gloss_w_feats = extract_gloss_word_feats(gloss_w, vocab)
+                        inst_X.append(gloss_w_feats)
+
+                        # Use existing gold tags from the instance if
+                        # the label extraction method is either "gold" or "both"
+                        if use_gold_tags:
+                            gold_y.append(map_pos(gloss_w.pos, args.tagmap))
+
+                    # Use (high-precision) heuristically projected tags for training labels
+                    # if the label extraction method is either "aln" or "both"
+                    if use_proj_tags and inst.trans:
+                        clear_pos_tags(inst)
+                        clear_bilingual_alignments(inst)
+                        try:
+                            heuristic_alignment(inst, heur_list=['exact'])
+                            if inst.trans.alignments:
+                                project_pos(inst)
+                                for gloss_w in inst.gloss:
+                                    pred_y.append(map_pos(gloss_w.pos, args.tagmap))
+
+                        except AlignException as ae:
+                            LOG.warning(ae)
+
+                    # Iterate through a list of features/labels,
+                    # and only add to the set of training instances
+                    # if there are both features for the instance and
+                    # a valid label.
+                    def add_tags(X_iter, y_iter):
+                        for X_elt, y_elt in zip(X_iter, y_iter):
+                            if X_elt and y_elt:
+                                X_text.append(X_elt)
+                                y.append(y_elt)
+
+                    # In the case of "both," zero out the projected tags
+                    # when there is a supervised tag provided.
+                    if gold_y and pred_y:
+                        assert len(gold_y) == len(pred_y)
+                        for i in range(len(gold_y)):
+                            if gold_y[i]:
+                                pred_y[i] = None
+
+                    add_tags(inst_X, gold_y)
+                    add_tags(inst_X, pred_y)
+
+
+
+    # Process the extracted feats into vectors
+    vectorizer = DictVectorizer()
+    X_vecs = vectorizer.fit_transform(X_text)
+    if args.vectors:
+        with open(args.vectors, 'w') as vec_f:
+            for label, row in zip(y, X_text):
+                vec_f.write('{}\t{}\n'.format(label, ' '.join(row)))
+
+    # Train the logistic regression classifier
+    print('Training classifier using {} training instances'.format(len(X_text)))
+    lr = LogisticRegressionCV(solver='saga', multi_class='ovr', cv=5, max_iter=10000)
+    lr.fit(X_vecs, y)
+
+    describe_logreg(lr, vectorizer=vectorizer)
+
+    # Save the model
+    lr = LRWrapper(lr, vectorizer, vocab)
+    lr.save(args.output)

@@ -1,0 +1,141 @@
+!	PUNC
+#	PUNC
+$	PUNC
+''	PUNC
+(	PUNC
+)	PUNC
+,	PUNC
+-LRB-	PUNC
+-RRB-	PUNC
+.	PUNC
+:	PUNC
+?	PUNC
+CC	CONJ
+CD	NUM
+CD|RB	X
+DT	DET
+EX	DET
+FW	X
+IN	ADP
+IN|RP	ADP
+JJ	ADJ
+JJR	ADJ
+JJRJR	ADJ
+JJS	ADJ
+JJ|RB	ADJ
+JJ|VBG	ADJ
+LS	X
+MD	VERB
+NN	NOUN
+NNP	PROPN
+NNPS	PROPN
+NNS	NOUN
+NN|NNS	NOUN
+NN|SYM	NOUN
+NN|VBG	NOUN
+NP	NOUN
+PDT	DET
+POS	PRON
+PRP	PRON
+PRP$	PRON
+PRP|VBP	PRON
+PRT	PART
+RB	ADV
+RBR	ADV
+RBS	ADV
+RB|RP	ADV
+RB|VBG	ADV
+RN	X
+RP	PART
+SYM	X
+TO	PART
+UH	X
+VB	VERB
+VBD	VERB
+VBD|VBN	VERB
+VBG	VERB
+VBG|NN	VERB
+VBN	VERB
+VBP	VERB
+VBP|TO	VERB
+VBZ	VERB
+VP	VERB
+WDT	DET
+WH	X
+WP	PRON
+WP$	PRON
+WRB	ADV
+``	PUNC
+
+# Proper Noun
+NNP	PROPN
+NNPC	PROPN
+
+# Common Noun (+Compound)
+NN 	NOUN
+NNC	NOUN
+
+# Noun denoting spatial relationship
+NST	NOUN
+
+# Personal Pronoun
+PRP	PRON
+WQ	PRON
+
+# Demonstrative
+DEM	PRON
+
+# Postposition
+PSP	ADP
+
+# Main Verb / Aux Verb
+VM	VERB
+VAUX	VERB
+
+# Adverb
+RB	ADV
+
+# Particle
+RP	PART
+
+# Conjunction (Subordinating & Coordinating)
+CC	CONJ
+
+# Quantifier (e.g. lots, some)
+QF	ADJ
+
+# Cardinal (two, three)
+QC	NUM
+
+# Ordinals (first, third)
+QO	NUM
+
+# Intensifier
+INTF	ADJ
+
+# Interjection
+INJ	PART
+
+# Reduplication
+RDP	PART
+
+# Echo words
+ECH	PART
+
+# Negative
+NEG	ADV
+
+# Quotative
+UT	VERB
+
+# Special symbol
+SYM	X
+
+JJ	ADJ
+
+PUNC	PUNC
+
+JUNK    X
+
+# SPACY REMAPPING
+CCONJ   CONJ

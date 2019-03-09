@@ -2,23 +2,36 @@
 Module to do things like dependency parsing and
 part-of-speech-tagging
 """
-
-import spacy
+from collections import Iterable
 
 from intent2.exceptions import ProcessException
 from intent2.model import Instance, DependencyStructure, DependencyLink
 
+import spacy
+from spacy.tokenizer import Tokenizer
 from spacy.language import Language
 from spacy.tokens import Doc
-
-global SPACY_ENG # type: Language
-SPACY_ENG = None
 
 # -------------------------------------------
 # Set up logging
 # -------------------------------------------
 import logging
 PROCESS_LOG = logging.getLogger()
+
+# -------------------------------------------
+# Set up spaCy
+# -------------------------------------------
+global SPACY_ENG # type: Language
+SPACY_ENG = None
+
+class DummyTokenizer(Tokenizer):
+    """
+    Class for initializing spaCy, but taking pre-tokenized
+    lists instead of strings.
+    """
+    def __call__(self, input: Iterable, **kwargs):
+        d = Doc(self.vocab, words=input)
+        return d
 
 
 def load_spacy():
@@ -30,6 +43,7 @@ def load_spacy():
     if SPACY_ENG is None:
         PROCESS_LOG.info('spaCy model was not previously loaded. Now loading...')
         SPACY_ENG = spacy.load('en_core_web_lg')  # type: Language
+        SPACY_ENG.tokenizer = DummyTokenizer(SPACY_ENG.vocab)
     return SPACY_ENG
 
 # -------------------------------------------
