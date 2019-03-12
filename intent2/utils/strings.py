@@ -76,7 +76,7 @@ class SubWordCreationTests(unittest.TestCase):
 
 # -------------------------------------------
 
-def subword_str_to_subword(subword_string, id_=None):
+def subword_str_to_subword(subword_string, id_=None, word: Word = None):
     """
     Given a string representing a subword, return the
     subword object from it.
@@ -97,7 +97,7 @@ def subword_str_to_subword(subword_string, id_=None):
         right_seg = subword_string[-1]
         subword_string = subword_string[:-1]
 
-    return SubWord(subword_string, left_symbol=left_seg, right_symbol=right_seg, id_=id_)
+    return SubWord(subword_string, left_symbol=left_seg, right_symbol=right_seg, id_=id_, word=Word)
 
 def word_tokenize(phrase_string):
     """

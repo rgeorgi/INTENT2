@@ -333,15 +333,32 @@ def handle_freefloating_hyphens(subword_obj: SubWord, prev_subword: SubWord,
             prev_subword.right_symbol = subword_symbols
             return True
 
-def check_for_token_alignments(aligned_tier: xigt.model.Tier):
+def force_token_alignments(src_aln_tier: xigt.model.Tier):
     """
     Take a tier which is expected to have alignments, and do a preliminary
     pass to ensure the tokens have alignments.
     """
-    any_alignments = list(filter(lambda item: item.alignment, aligned_tier))
-    if not any_alignments:
-        raise ImportException('No items in tier "{}" specify alignment targets.'.format(aligned_tier.id))
+    aligned_items = list(filter(lambda item: item.alignment, src_aln_tier))
+    if len(aligned_items) != len(src_aln_tier) and src_aln_tier.alignment:
+        tgt_aln_tier = xigt_find(src_aln_tier.igt, id=src_aln_tier.alignment)
+        assert tgt_aln_tier
 
+
+        if len(src_aln_tier) == len(tgt_aln_tier):
+            IMPORT_LOG.warning('Tier "{0}" in "{2}" does not provide alignment targets, but has the same number of items as tier "{1}". Assuming 1:1 alignment.'
+                               .format(src_aln_tier.id, tgt_aln_tier.id, src_aln_tier.igt.id))
+            for src_aln_item, tgt_aln_item in zip(src_aln_tier, tgt_aln_tier): # type: Item, Item
+                src_aln_item.alignment = tgt_aln_item.id
+        else:
+            raise ImportException('Tier "{0}" in {1} does not provide alignment targets, and has an unequal number of tokens from tier {2}'
+                                  .format(src_aln_tier.id, src_aln_tier.igt.id, tgt_aln_tier.id))
+
+
+def type_to_id(type: type):
+    string_mapping = {GlossWord.__name__:GLOSS_WORD_ID,
+                      LangWord.__name__:LANG_WORD_ID,
+                      TransWord.__name__:TRANS_WORD_ID}
+    return string_mapping[type.__name__]
 
 def create_phrase_from_segments_alignments(id_to_object_mapping,
                                            segmentation_tier: xigt.model.Tier,
@@ -354,7 +371,8 @@ def create_phrase_from_segments_alignments(id_to_object_mapping,
     This is useful in the case of glosses which align with morphemes, but
     are not given their own word-level groupings in the data.
     """
-    check_for_token_alignments(aligned_tier)
+
+    force_token_alignments(segmentation_tier)
 
     # -- 0) Keep a mapping of word-level groups, and
     #       the subword items that they contain.
@@ -364,6 +382,11 @@ def create_phrase_from_segments_alignments(id_to_object_mapping,
     #       add them to the group map.
     prev_subword = None
     for segment_item in segmentation_tier:  # type: xigt.model.Item
+
+        # The segment item must be specified in some way.
+        if segment_item.value() is None:
+            raise ImportException('Item "{}" has no content'.format(segment_item.id))
+        
         subword_obj = subword_str_to_subword(segment_item.value(), id_=segment_item.id)
 
         # Handle freefloating hyphens
@@ -409,12 +432,9 @@ def create_phrase_from_segments_alignments(id_to_object_mapping,
     #       group map.
     word_groups = sorted(word_to_segment_map.keys(), key=lambda word: word.index)
     phrase = Phrase()
-    string_mapping = {GlossWord.__name__:GLOSS_WORD_ID,
-                      LangWord.__name__:LANG_WORD_ID,
-                      TransWord.__name__:TRANS_WORD_ID}
     for aligned_word in word_groups:  # type: Word
         new_word = WordType(subwords=word_to_segment_map[aligned_word],
-                      id_=item_id(string_mapping[WordType.__name__], aligned_word.index+1))
+                      id_=item_id(type_to_id(WordType), aligned_word.index+1))
         new_word.add_alignment(aligned_word)
         phrase.add_word(new_word)
     return phrase
@@ -452,8 +472,8 @@ def load_words(id_to_object_mapping,
                 raise SegmentationTierException('Attempt to create phrase from segmentation tier "{}" in instance "{}" with no word alignments.'.format(
                     segmentation_tier.id, segmentation_tier.igt.id
                 ))
-            IMPORT_LOG.info('Creating words tier from combination of segmentation "{}" and aligned tier "{}"'.format(
-                segmentation_tier.id, alignment_tier.id
+            IMPORT_LOG.info('Creating words tier "{}" from combination of segmentation "{}" and aligned tier "{}"'.format(
+                type_to_id(WordType), segmentation_tier.id, alignment_tier.id
             ))
             return create_phrase_from_segments_alignments(id_to_object_mapping,
                                                           segmentation_tier,
@@ -495,7 +515,8 @@ def load_words(id_to_object_mapping,
 
                 for xigt_subword in morph_segments:  # type: xigt.model.Item
 
-                    sw = subword_str_to_subword(xigt_subword.value(), id_=xigt_subword.id)
+                    sw = subword_str_to_subword(xigt_subword.value(),
+                                                id_=xigt_subword.id)
                     was_freefloating = handle_freefloating_hyphens(sw, prev_sw,
                                                                    segmentation_tier.id,
                                                                    segmentation_tier.igt.id,
