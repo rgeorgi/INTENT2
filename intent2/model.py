@@ -446,7 +446,7 @@ class Word(TaggableMixin, AlignableMixin, VectorMixin, SpacyTokenMixin, IdMixin)
 
         :param string:
         :param subwords:
-        :type subwords: Iterable[SubWord]
+        :type subwords: List[SubWord]
         :param id_:
         """
         assert (string or subwords) and not (string and subwords)
