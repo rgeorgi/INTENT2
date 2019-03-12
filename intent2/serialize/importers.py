@@ -333,7 +333,14 @@ def handle_freefloating_hyphens(subword_obj: SubWord, prev_subword: SubWord,
             prev_subword.right_symbol = subword_symbols
             return True
 
-
+def check_for_token_alignments(aligned_tier: xigt.model.Tier):
+    """
+    Take a tier which is expected to have alignments, and do a preliminary
+    pass to ensure the tokens have alignments.
+    """
+    any_alignments = list(filter(lambda item: item.alignment, aligned_tier))
+    if not any_alignments:
+        raise ImportException('No items in tier "{}" specify alignment targets.'.format(aligned_tier.id))
 
 
 def create_phrase_from_segments_alignments(id_to_object_mapping,
@@ -347,6 +354,8 @@ def create_phrase_from_segments_alignments(id_to_object_mapping,
     This is useful in the case of glosses which align with morphemes, but
     are not given their own word-level groupings in the data.
     """
+    check_for_token_alignments(aligned_tier)
+
     # -- 0) Keep a mapping of word-level groups, and
     #       the subword items that they contain.
     word_to_segment_map = defaultdict(list)
@@ -366,9 +375,13 @@ def create_phrase_from_segments_alignments(id_to_object_mapping,
         # Enter the subword obj into the mapping dict.
         id_to_object_mapping[segment_item.id] = subword_obj
 
-        # We assume that there are alignments for every segmentation object,
-        # and that
-        if not (segment_item.alignment and id_to_object_mapping.get(segment_item.alignment)):
+        # We assume that there are alignments for every segmentation object
+        if not segment_item.alignment:
+            raise ImportException(
+                'Item "{}" in tier "{}" aligned to tier "{}" does not specify alignment target.'.format(
+                segment_item.id, segmentation_tier.alignment, segmentation_tier.id, segmentation_tier.igt.id))
+
+        elif not (id_to_object_mapping.get(segment_item.alignment)):
             raise ImportException('Item "{}" in tier "{}" for instance "{}" missing alignment target "{}"'.format(
                 segment_item.id,
                 segmentation_tier.id,
@@ -682,7 +695,7 @@ def align_gloss_lang_sw(gloss: Phrase, lang: Phrase):
     or only one SubWord on one side.
     """
     if not (lang and gloss):
-        raise LangGlossAlignException("Instance does not have both lang and gloss liens.")
+        raise LangGlossAlignException("Instance does not have both lang and gloss lines.")
     elif (len(lang) != len(gloss)):
         raise LangGlossAlignException("Unequal number of lang/gloss tokens ({} vs {})".format(len(lang), len(gloss)))
 
