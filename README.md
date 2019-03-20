@@ -1,6 +1,6 @@
 # INTENT2
 
-INTENT2 is a rewrite of the [INterlinear Text ENrichment Toolkit](https://github.com/rgeorgi/INTENT2.git).
+INTENT2 is a rewrite of the [INterlinear Text ENrichment Toolkit](https://github.com/rgeorgi/INTENT2.git), the result of my doctoral dissertation research [[pdf](https://digital.lib.washington.edu/researchworks/bitstream/handle/1773/37168/Georgi_washington_0250E_16542.pdf?sequence=1&isAllowed=y)].
 
 The main goals of this rewrite are to increase the ease of distribution, allowing for a simple download and `pip install` using pure python, whenever possible.
 
@@ -50,7 +50,10 @@ In order to enrich a [Xigt](https://github.com/xigt/xigt)-XML document, you shou
                   [--ds-pngs DS_PNGS] [--aln-pngs ALN_PNGS]
     intent: error: the following arguments are required: -i/--input, -o/--output
 * The `-i` file specifies the file you wish to enrich, and the `-o` the output file.
-
 * If you wish to use the gloss-POS classification, a model must be specified with `-c` or `--classifier`, 
 * The `--ds-pngs` and `--aln-pngs` arguments will specify a directory into which PNG visualizations of the dependency structures and alignments will be generated, one per enriched instance.
+
+### Enrichment Output
+
+INTENT2 will utilize segmentation provided in the input if present, but 
 

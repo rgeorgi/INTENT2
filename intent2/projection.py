@@ -25,6 +25,7 @@ ENRICH_LOG = logging.getLogger('enrich')
 # -------------------------------------------
 
 DS_PROJ_LOG = logging.getLogger('ds_project')
+POS_PROJ_LOG = logging.getLogger('pos_project')
 
 
 def project_ds(inst: Instance):
@@ -176,38 +177,76 @@ def project_ds(inst: Instance):
 # NOUN > VERB > ADJ > ADV > PRON > DET > ADP > CONJ > PRT > NUM > PUNC > X
 precedence = ['PROPN', 'NOUN','VERB', 'ADJ', 'ADV', 'PRON', 'DET', 'ADP', 'CONJ', 'CCONJ', 'PART', 'PRT', 'NUM', 'PUNC', 'X', 'SYM', 'INTJ', 'PUNCT']
 
-def project_pos(inst: Instance):
+
+def choose_tag(taglist: List[str], method='precedence'):
+    """
+    Choose the tag from a list of possible tags that represent multiple
+    alignment options, given the provided method.
+
+    """
+    # If 'precedence' is the multiple alignment for subwords,
+    # choose from the multiple alignments by order of precedence
+    if method == 'precedence':
+        best_tags = sorted(taglist, key=lambda tag: precedence.index(tag))
+        return best_tags[0] if best_tags else None
+
+    # The 'avoid' method avoids assigning any tag if there are multiple options
+    elif method == 'avoid':
+        return taglist[0] if len(taglist) == 1 else None
+
+    # The 'same' method will assign a tag if there are multiple alignments, but only
+    # if they are all the same tag.
+    elif method == 'same':
+        return taglist[0] if len(set(taglist)) == 1 else None
+
+    else:
+        raise Exception('Unknown subword alignment method "{}"'.format(method))
+
+def project_pos(inst: Instance,
+                subword_multiple_alignment='precedence',
+                word_multiple_alignment='precedence'):
     """
     Project part-of-speech tags using the bilingual alignment.
+
+    :param word_multiple_alignment: The desired behavior when multiple
+               translation words are aligned with the same gloss word.
+               The options are:
+                   * precedence:
+                       - Use the precedence list to take the most "salient" tag
+                   * avoid
+                       - Don't perform projection when multiple tags align
+
+   :param subword_multiple_alignment: Same as above, but the translation words
+             are initially aligned with subword elements (e.g. 1sg.read-PAST can
+             have 1sg <-> 'I' and read  <-> 'read' constitute one subword (morpheme))
     """
     ENRICH_LOG.info('Projecting part-of-speech tags.')
 
     # There must be alignments present to project
-    assert inst.trans.alignments
+    assert inst.trans.alignments and inst.trans and inst.gloss
     process_trans_if_needed(inst)
 
-    # Now, iterate over the translation words, and project their
-    for trans_w in inst.trans:
-        for aligned_gloss in trans_w.alignments: # type: SubWord
+    for gloss_w in inst.gloss:
 
-            # Check to see if the aligned gloss already has
-            # a part-of-speech tag, or if it does have one, that
-            # it is a lower precedent than the proposed aligned tag.
-            if (not aligned_gloss.pos or
-                    precedence.index(aligned_gloss.pos) > precedence.index(trans_w.pos)):
-                aligned_gloss.pos = trans_w.pos
+        # Do subword_multiple_alignments if asked for.
+        if subword_multiple_alignment is not None:
+            for gloss_sw in gloss_w.subwords:
+                aligned_trans_words = gloss_sw.aligned_words(TransWord)
+                aligned_trans_tags = [tw.pos for tw in aligned_trans_words if tw.pos]
+                gloss_sw.pos = choose_tag(aligned_trans_tags, method=subword_multiple_alignment)
+                POS_PROJ_LOG.debug('Subword tag chosen for {}[{}]: {}'.format(gloss_sw.string,
+                                                                              gloss_sw.id,
+                                                                              gloss_sw.pos))
 
-    combine_subword_tags(inst.gloss)
 
-def combine_subword_tags(p: Phrase):
-    """
-    Take a pass over a  phrase, and combine
-    the subword-level part-of-speech tags
-    """
-    for word in p:
-        tags = [subword.pos for subword in word if subword.pos]
-        best_tags = sorted(tags, key=lambda tag: precedence.index(tag))
-        word.pos = best_tags[0] if best_tags else None
+        # Choose the gloss tags at the word level
+        aligned_trans_tags = [tw.pos for tw in gloss_w.aligned_words(TransWord) if tw.pos]
+        gloss_w.pos = choose_tag(aligned_trans_tags, method=word_multiple_alignment)
+        POS_PROJ_LOG.debug('Gloss Word tag chosen for {}[{}]: {}'.format(gloss_w.hyphenated,
+                                                                         gloss_w.id,
+                                                                         gloss_w.pos))
+
+
 
 # -------------------------------------------
 # Clearing Bilingual Alignments/POS to do re-enrichment

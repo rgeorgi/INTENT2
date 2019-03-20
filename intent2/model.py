@@ -1,7 +1,10 @@
 import re
 import unittest
 from collections import defaultdict
-from typing import Generator, Iterable, Iterator, Union, ByteString, Set
+from typing import Generator, Iterable, Iterator, Union, ByteString, Set, List
+
+
+
 
 class DependencyException(Exception): pass
 
@@ -51,7 +54,7 @@ class AlignableMixin(object):
         alignments = set([])
         for aligned_item in self.alignments: # type: Union[Word, SubWord]
             word = aligned_item.word if isinstance(aligned_item, SubWord) else aligned_item
-            if (not word_type) or isinstance(word, word_type):
+            if (word_type is None) or isinstance(word, word_type):
                 alignments.add(word)
         return alignments
 
@@ -551,19 +554,12 @@ class TransWord(Word):
         :rtype: set[LangWord]
         """
         ret_words = set([])
-        for aligned_item in self.alignments:
+        for aligned_item in self.aligned_words():
 
-            # Get the aligned word for this item,
-            # which should be a gloss or
-            if isinstance(aligned_item, SubWord):
-                aligned_word = aligned_item.word
-            elif isinstance(aligned_item, Word):
-                aligned_word = aligned_item
-
-            if isinstance(aligned_word, LangWord):
+            if isinstance(aligned_item, LangWord):
                 ret_words.add(aligned_item)
             else:
-                ret_words |= {w for w in aligned_word.alignments if isinstance(w, LangWord)}
+                ret_words |= {w for w in aligned_item.aligned_words(LangWord)}
         return ret_words
 
 
@@ -687,8 +683,18 @@ class Phrase(list, IdMixin, DependencyMixin):
         return bool(len(self) == len(other) and [True for i, j in zip(self, other) if i.equals(j)])
 
     @classmethod
-    def from_string(cls, s):
-        return cls([Word(w) for w in s.split()])
+    def from_string(cls, s, p_id='p', id_base='w', tokenizer=None, WordType=Word):
+        if tokenizer is None:
+            words = s.split()
+        else:
+            words = tokenizer(s)
+
+        wordlist = []
+        for i, w_str in enumerate(words):
+            w_id = '{}{}'.format(id_base, i+1)
+            subwords = word_str_to_subwords(w_str, id_base=w_id)
+            wordlist.append(WordType(subwords=subwords, id_=w_id))
+        return cls(wordlist, id_=p_id)
 
     @property
     def hyphenated(self): return ' '.join([w.hyphenated for w in self])
@@ -700,10 +706,9 @@ class Phrase(list, IdMixin, DependencyMixin):
         return '[p: {}]'.format(', '.join([repr(s) for s in self]))
 
     @property
-    def subwords(self):
+    def subwords(self) -> List[SubWord]:
         """
         Return all the subwords
-        :rtype: List[SubWord]
         """
         return [subword for word in self for subword in word]
 
@@ -747,9 +752,9 @@ class Instance(IdMixin):
         :type gloss: Phrase
         :type trans: Phrase
         """
-        self.lang = lang
-        self.gloss = gloss
-        self.trans = trans
+        self.lang = lang # type: Phrase
+        self.gloss = gloss # type: Phrase
+        self.trans = trans # type: Phrase
         self._id = id
 
     def __str__(self):
@@ -785,6 +790,19 @@ class Instance(IdMixin):
                 if isinstance(aln_elt, GlossWord):
                     return True
         return False
+
+    @classmethod
+    def from_strings(cls, strings: List[str]):
+        """
+        :rtype: Instance
+        """
+        assert len(strings) == 3
+        lang_txt, gloss_txt, trans_txt = strings
+        lang_p = Phrase.from_string(lang_txt, id_base='w', p_id='lang', WordType=LangWord)
+        gloss_p = Phrase.from_string(gloss_txt, id_base='gw', p_id='gloss', WordType=GlossWord)
+        trans_p = Phrase.from_string(trans_txt, id_base='tw', tokenizer=word_tokenize, p_id='trans', WordType=TransWord)
+        return cls(lang_p, gloss_p, trans_p)
+
 
 class Corpus(list):
     """
@@ -921,3 +939,5 @@ class TagTests(unittest.TestCase):
         self.assertIsNone(self.wordA.pos)
         self.wordA.pos = 'NN'
         self.assertIsNotNone(self.wordA.pos)
+
+from intent2.utils.strings import word_str_to_subwords, word_tokenize

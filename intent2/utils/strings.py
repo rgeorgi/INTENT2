@@ -2,7 +2,7 @@ import re
 import unittest
 import nltk
 
-from intent2.model import Phrase, SubWord, Word
+
 
 import logging
 STRING_LOG = logging.getLogger('string')
@@ -23,12 +23,14 @@ class StringSegmentationException(StringException): pass
 
 # -------------------------------------------
 
-def word_str_to_subwords(w: str):
+def word_str_to_subwords(w: str, id_base: str = None):
     """
     Given a word string, create a subword components.
     :param w:
     :return:
     """
+
+    id_str = '{}-{{}}'.format(id_base) if id_base else '{}'
 
     # Remove whitespace
     w = re.sub('\s', '', w)
@@ -37,11 +39,12 @@ def word_str_to_subwords(w: str):
     # end of string, and the
     subwords = []
     last_index = 0
-    for morph_position in re.finditer(MORPH_SEG_RE, w):
+    for i, morph_position in enumerate(re.finditer(MORPH_SEG_RE, w)):
         start, stop = morph_position.span()
         morph_str = w[last_index:start]
         morph_sep = w[start:stop]
-        sw = SubWord(morph_str, right_symbol=morph_sep if morph_sep else None)
+        sw = SubWord(morph_str, id_= id_str.format(i+1),
+                     right_symbol=morph_sep if morph_sep else None)
         subwords.append(sw)
         last_index = stop
     return subwords
@@ -76,12 +79,12 @@ class SubWordCreationTests(unittest.TestCase):
 
 # -------------------------------------------
 
-def subword_str_to_subword(subword_string, id_=None, word: Word = None):
+def subword_str_to_subword(subword_string, id_=None, word = None):
     """
     Given a string representing a subword, return the
     subword object from it.
 
-    :param subword_string:
+    :type word: Word
     :return: A SubWord object, given
     """
     # Check for left and rightmost characters being
@@ -138,3 +141,5 @@ def character_align(word_string, subword_string, skip_re='[\-\s]'):
 
     print(p.hyphenated)
     print([w.subwords for w in p])
+
+from intent2.model import Phrase, SubWord, Word

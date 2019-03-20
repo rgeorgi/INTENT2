@@ -7,6 +7,11 @@ from intent2.processing import process_trans_if_needed, load_spacy
 from typing import List, Tuple
 from spacy.tokens import Token, Doc
 
+class AlignException(Exception): pass
+class MissingLineException(AlignException): pass
+class LangMorphAlignException(AlignException): pass
+class UnequalTokensException(AlignException): pass
+
 # -------------------------------------------
 # Set up logging
 # -------------------------------------------
@@ -23,14 +28,28 @@ def gloss_to_morph_align(inst: Instance):
     """
     assert inst.lang and inst.gloss
 
-    lang_sw = list(inst.lang.subwords)
-    gloss_sw = list(inst.gloss.subwords)
 
-    if len(lang_sw) != len(gloss_sw):
-        raise Exception('Number of morphs and glosses differ.')
+    if len(inst.lang) != len(inst.gloss):
+        raise UnequalTokensException("Number of lang words and glosses differ.")
 
-    for i, gloss in enumerate(inst.gloss.subwords):
-        gloss.add_alignment(lang_sw[i])
+    for lang_w, gloss_w in zip(inst.lang, inst.gloss): # type: Word, Word
+
+        # If each has the same number of subwords
+        if len(gloss_w.subwords) == len(lang_w.subwords):
+            for gloss_sw, lang_sw in zip(gloss_w.subwords, lang_w.subwords):
+                gloss_sw.add_alignment(lang_sw)
+
+        elif len(gloss_w.subwords) == 1:
+            for lang_sw in lang_w.subwords:
+                lang_sw.add_alignment(gloss_w.subwords[0])
+
+        elif len(lang_w.subwords) == 1:
+            for gloss_sw in gloss_w.subwords:
+                gloss_sw.add_alignment(lang_w.subwords[0])
+
+        else:
+            raise LangMorphAlignException('Number of morphs and glosses differ.')
+
 
 
 # -------------------------------------------
@@ -117,7 +136,7 @@ gramdict = {'1sg': ['i', 'me'],
             'neg': ["n't", 'not'],
             '2pl': ['you']}
 
-class AlignException(Exception): pass
+
 
 def heuristic_alignment(inst: Instance, heur_list = None):
     """
@@ -129,11 +148,11 @@ def heuristic_alignment(inst: Instance, heur_list = None):
 
     # To do heuristic alignment, we need minimally a gloss and translation line.
     if not (inst.gloss and inst.trans and inst.lang):
-        raise AlignException('Instance "{}" does not contain L,G,T lines.'.format(inst.id))
+        raise MissingLineException('Instance "{}" does not contain L,G,T lines.'.format(inst.id))
 
     # We also need the
     if not (len(inst.lang) == len(inst.gloss)):
-        raise AlignException('Instance "{}" has different number of L, G tokens.'.format(inst.id))
+        raise UnequalTokensException('Instance "{}" has different number of L, G tokens.'.format(inst.id))
 
     # We also need the translation line to have been processed for things like POS
     # tags and lemmas.

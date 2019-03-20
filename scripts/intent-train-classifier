@@ -45,11 +45,12 @@ if __name__ == '__main__':
     p.add_argument('-o', '--output', help='Store the classifier', required=True)
     p.add_argument('--vocab', help='Use a dictionary of word--tag probabilities to help with unigram POS probs.')
     p.add_argument('-vf', '--vectors', help='Log the training vectors to this file.')
+    p.add_argument('-tf', help='Output text+labels for possible CNN training')
     p.add_argument('-v', '--verbose', help='Increase verbosity', action='count', default=0)
     p.add_argument('--tagmap', help='Map POS tags in the training data using this tagmap.', type=TagsetMapping.load, default={})
     p.add_argument('--maxiter', help='Max iterations for training.', default=1000)
 
-    p.add_argument('--method', choices=['gold', 'aln', 'both'], help='Use gold-standard annotations, high-precision heuristic alignments, or both.', default='gold')
+    p.add_argument('--method', choices=['gold', 'proj', 'both'], help='Use gold-standard annotations, high-precision heuristic alignments, or both.', default='gold')
 
     args = p.parse_args()
 
@@ -68,6 +69,7 @@ if __name__ == '__main__':
         LOG.setLevel(logging.DEBUG)
 
 
+
     X_text = []
     y = []
 
@@ -79,8 +81,7 @@ if __name__ == '__main__':
 
     # Use gold tags
     use_gold_tags = args.method in {'gold', 'both'}
-    use_proj_tags = args.method in {'gold', 'both'}
-    use_both_tags = args.method == 'both'
+    use_proj_tags = args.method in {'proj', 'both'}
 
     # Load the files.
     for path in pathlist:
@@ -94,7 +95,7 @@ if __name__ == '__main__':
 
                     inst_X = []
                     gold_y = []
-                    pred_y = []
+                    proj_y = []
 
                     for gloss_w in inst.gloss:
                         gloss_w_feats = extract_gloss_word_feats(gloss_w, vocab)
@@ -106,17 +107,22 @@ if __name__ == '__main__':
                             lg_tag = get_lg_tag(gloss_w)  # Use lang POS tags over gloss if present.
                             gold_y.append(map_pos(lg_tag, args.tagmap))
 
+                    # Clear the gloss and translation POS tags
+                    # in advance of attempting projection
+                    clear_pos_tags(inst.gloss)
+                    clear_pos_tags(inst.trans)
+
                     # Use (high-precision) heuristically projected tags for training labels
                     # if the label extraction method is either "aln" or "both"
                     if use_proj_tags and inst.trans:
-                        clear_pos_tags(inst)
+
                         clear_bilingual_alignments(inst)
                         try:
                             heuristic_alignment(inst, heur_list=['exact'])
                             if inst.trans.alignments:
-                                project_pos(inst)
+                                project_pos(inst, word_multiple_alignment='same', subword_multiple_alignment=None)
                                 for gloss_w in inst.gloss:
-                                    pred_y.append(map_pos(gloss_w.pos, args.tagmap))
+                                    proj_y.append(map_pos(gloss_w.pos, args.tagmap))
 
                         except AlignException as ae:
                             LOG.warning(ae)
@@ -133,14 +139,14 @@ if __name__ == '__main__':
 
                     # In the case of "both," zero out the projected tags
                     # when there is a supervised tag provided.
-                    if gold_y and pred_y:
-                        assert len(gold_y) == len(pred_y)
+                    if gold_y and proj_y:
+                        assert len(gold_y) == len(proj_y)
                         for i in range(len(gold_y)):
                             if gold_y[i]:
-                                pred_y[i] = None
+                                proj_y[i] = None
 
                     add_tags(inst_X, gold_y)
-                    add_tags(inst_X, pred_y)
+                    add_tags(inst_X, proj_y)
 
 
 

@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 import intent2
 
 setup(
-    name="intent",
+    name="intent2",
     version=intent2.__version__,
     packages=find_packages(),
     scripts=['scripts/intent',
