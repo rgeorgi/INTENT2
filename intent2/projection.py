@@ -87,6 +87,11 @@ def project_ds(inst: Instance):
             if new_ds.depth(parent_link) > min_depth:
                 new_ds.remove(parent_link)
 
+            # Also, make sure to remove any cycles (links where the child
+            # is the same node as the parent.
+            if parent_link.parent and parent_link.child == parent_link.parent:
+                new_ds.remove(parent_link)
+
     # -- 4) Reattach unaligned words.
     #       Unaligned attachment from Quirk, et. al, 2005:
     #

@@ -1,8 +1,10 @@
 import re
+import sys
 import unittest
 from collections import defaultdict
 from typing import Generator, Iterable, Iterator, Union, ByteString, Set, List
-
+import logging
+DS_LOG = logging.getLogger('dependencies')
 
 
 
@@ -162,8 +164,14 @@ class DependencyStructure(set):
                                                                                        link.parent,
                                                                                        link.parent.id))
             else:
-                return min({self.depth(parent_link, seen_links=seen_links | parent_links)
-                            for parent_link in filtered_links}) + 1
+                min_depth = sys.maxsize
+                for parent_link in filtered_links:
+                    try:
+                        min_depth = min(min_depth, self.depth(parent_link, seen_links=seen_links | parent_links))
+                    except DependencyException as de:
+                        DS_LOG.info(de)
+                        pass
+                return min_depth
 
 
     def remove_word(self, word, promote=True):
