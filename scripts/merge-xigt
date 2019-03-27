@@ -28,6 +28,8 @@ def merge_files(input_paths, output_path):
     """
     mm = MergeMap()
 
+    inst_counts = []
+
     new_corpus = XigtCorpus()
     # Iterate through each of the input paths,
     # and build up a dictionary of overlapping
@@ -35,6 +37,7 @@ def merge_files(input_paths, output_path):
     for path in input_paths:
         with open(path, 'r') as xigt_f:
             xc = xigtxml.load(xigt_f)
+            inst_counts.append(len(xc)) # Count the num instances in each corpus
             mm.add_corpus(xc)
             new_corpus.id = xc.id
             new_corpus.attributes.update(xc.attributes)
@@ -42,7 +45,14 @@ def merge_files(input_paths, output_path):
     # Now, iterate through that dictionary, and combine instances.
     for inst_id, instances in mm.instances:
         merged_instance = merge_instances(inst_id, instances, mm)
+        merged_instance.sort_tiers()
         new_corpus.append(merged_instance)
+
+    # Print out some stats
+    print('{} unique instances from {} files. ({})'.format(len(new_corpus),
+                                                         len(input_paths),
+                                                         ','.join([str(i) for i in inst_counts])))
+
 
     with open(output_path, 'w') as out_f:
         xigtxml.dump(out_f, new_corpus)
@@ -120,6 +130,7 @@ def merge_tiers(igt_id: str, tier_id: str, tiers: List[Tier],
     """
     Given a set of tier objects, combine them.
     """
+    LOG.debug('Merging tiers {} for instance {}'.format(','.join([t.id for t in tiers]), igt_id))
     new_tier = Tier(id=tier_id)
     for tier in tiers:
         assert tier.id == tier.id
@@ -146,6 +157,11 @@ def odin_sort(key: str):
         return 1
     if key == 'n':
         return 2
+
+    # Return non-ODIN tiers after any
+    # of the ODIN tiers.
+    else:
+        return 3
 
 def merge_tiers_by_type(igt_id: str, type_str: str, mm: MergeMap) -> List[Tier]:
     for tier_key, tiers in sorted(mm.get_tiers_by_type(igt_id, type_str).items(),
@@ -265,7 +281,7 @@ if __name__ == '__main__':
     p.add_argument('-p', '--pattern', help='Add a glob pattern.', type=globfiles, default=[])
     p.add_argument('-d', '--dir', action='append', help='Specify a directory containing the files.', type=existsdir, default=[])
     p.add_argument('-r', '--recursive', action='store_true')
-    p.add_argument('-v', '--verbose', action='count', help='Increase verbosity')
+    p.add_argument('-v', '--verbose', action='count', help='Increase verbosity', default=0)
 
     p.add_argument('-o', '--output', help='Output file.', required=True)
 
