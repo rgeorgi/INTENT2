@@ -7,8 +7,10 @@ to classify them.
 import os, glob
 import sys
 from argparse import ArgumentParser
+from typing import List
 
-from intent2.model import LangWord
+from intent2.model import LangWord, Instance
+from intent2.processing import process_trans
 from intent2.projection import clear_pos_tags, clear_bilingual_alignments, project_pos
 
 from intent2.alignment import heuristic_alignment, AlignException
@@ -35,6 +37,24 @@ def map_pos(pos, tagmap: TagsetMapping):
 def get_pattern(pattern):
     return glob.glob(pattern)
 
+def get_projected_tags(inst: Instance, heur_list=None,
+                       subword_multiple_alignment='precedence',
+                       word_multiple_alignment='precedence' ) -> List[str]:
+    # Get any (standard) projected tags, using multiple
+    # alignment and other default settings
+    clear_pos_tags(inst.lang)
+    clear_pos_tags(inst.gloss)
+    clear_pos_tags(inst.trans)
+    process_trans(inst, parse=False)
+    try:
+        heuristic_alignment(inst, heur_list=heur_list)
+        if inst.trans.alignments:
+            project_pos(inst, subword_multiple_alignment=subword_multiple_alignment, word_multiple_alignment=word_multiple_alignment)
+    except AlignException as ae:
+        pass
+    heur_tags = [gloss_w.pos for gloss_w in inst.gloss]
+    return heur_tags
+
 if __name__ == '__main__':
     p = ArgumentParser()
     p.add_argument('-f', '--file', action='append', help='Provide a particular file for input', type=existsfile, default=[])
@@ -49,6 +69,9 @@ if __name__ == '__main__':
     p.add_argument('-v', '--verbose', help='Increase verbosity', action='count', default=0)
     p.add_argument('--tagmap', help='Map POS tags in the training data using this tagmap.', type=TagsetMapping.load, default={})
     p.add_argument('--maxiter', help='Max iterations for training.', default=1000)
+    p.add_argument('--use-pt', help='Use projected tags as features in training the classifier.', action='store_true', default=False)
+    p.add_argument('--use-pst', help='Use projected sub-tags as features in training the classifier.', action='store_true', default=False)
+    p.add_argument('--no-vocab', help="Don't use the dictionary lookup for words features.", action='store_false', default=True)
 
     p.add_argument('--method', choices=['gold', 'proj', 'both'], help='Use gold-standard annotations, high-precision heuristic alignments, or both.', default='gold')
 
@@ -90,6 +113,24 @@ if __name__ == '__main__':
             c = parse_xigt_corpus(xc)
             for inst in c:
 
+                if not (inst.trans and inst.gloss):
+                    continue
+
+                # Get any existing gold tags and save them.
+                gold_tags = [get_lg_tag(gloss_w) for gloss_w in inst.gloss]
+
+                # Don't continue with getting projected tags and other analysis
+                # if we are only using gold tags, and none are present.
+                if not list(filter(lambda x: x, gold_tags)) and args.method == 'gold':
+                    continue
+
+                # Get default projected tags
+                heur_tags = get_projected_tags(inst) if (args.use_pt or args.use_pst) else [None] * len(inst.gloss)
+
+                # Get high-precision projected tags
+                high_prec_heur_tags = get_projected_tags(inst, heur_list=['exact'], word_multiple_alignment='same', subword_multiple_alignment='same') if use_proj_tags else []
+
+
                 # Collect features from the instances.
                 if inst.gloss:
 
@@ -97,8 +138,12 @@ if __name__ == '__main__':
                     gold_y = []
                     proj_y = []
 
-                    for gloss_w in inst.gloss:
-                        gloss_w_feats = extract_gloss_word_feats(gloss_w, vocab)
+                    # Go through and collect basic training features
+                    for gloss_w, heur_tag in zip(inst.gloss, heur_tags):
+                        gloss_w_feats = extract_gloss_word_feats(gloss_w, vocab,
+                                                                 projected_tag=heur_tag if args.use_pt else None,
+                                                                 subword_tags=[gsw.pos for gsw in gloss_w.subwords if gsw.pos] if args.use_pst else [],
+                                                                 use_vocab=args.no_vocab)
                         inst_X.append(gloss_w_feats)
 
                         # Use existing gold tags from the instance if
@@ -107,25 +152,10 @@ if __name__ == '__main__':
                             lg_tag = get_lg_tag(gloss_w)  # Use lang POS tags over gloss if present.
                             gold_y.append(map_pos(lg_tag, args.tagmap))
 
-                    # Clear the gloss and translation POS tags
-                    # in advance of attempting projection
-                    clear_pos_tags(inst.gloss)
-                    clear_pos_tags(inst.trans)
-
                     # Use (high-precision) heuristically projected tags for training labels
                     # if the label extraction method is either "aln" or "both"
                     if use_proj_tags and inst.trans:
-
-                        clear_bilingual_alignments(inst)
-                        try:
-                            heuristic_alignment(inst, heur_list=['exact'])
-                            if inst.trans.alignments:
-                                project_pos(inst, word_multiple_alignment='same', subword_multiple_alignment=None)
-                                for gloss_w in inst.gloss:
-                                    proj_y.append(map_pos(gloss_w.pos, args.tagmap))
-
-                        except AlignException as ae:
-                            LOG.warning(ae)
+                        proj_y.extend([map_pos(tag, args.tagmap) for tag in high_prec_heur_tags])
 
                     # Iterate through a list of features/labels,
                     # and only add to the set of training instances

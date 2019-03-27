@@ -1,11 +1,14 @@
 """
 Module to hold all the logic for heuristic alignment
 """
+import os
 
 from intent2.model import Instance, Word
 from intent2.processing import process_trans_if_needed, load_spacy
 from typing import List, Tuple
 from spacy.tokens import Token, Doc
+import yaml
+from yaml.loader import SafeLoader
 
 class AlignException(Exception): pass
 class MissingLineException(AlignException): pass
@@ -122,19 +125,8 @@ heur_map = {'vec':vector_match,
             'gram':gram_match,
             'sub':substring_match}
 
-gramdict = {'1sg': ['i', 'me'],
-            '1pl' : ['we', 'us', 'our'],
-            'det': ['the', 'this'],
-            'art': ['the'],
-            '3pl': ['they'],
-            '3sg': ['he', 'she', 'him', 'her'],
-            '3sgf': ['she', 'her'],
-            '3fsg': ['she', 'her'],
-            '2sg': ['you'],
-            '3sgp': ['he'],
-            'poss': ['his', 'her', 'my', 'their'],
-            'neg': ["n't", 'not'],
-            '2pl': ['you']}
+with open(os.path.join(os.path.dirname(__file__), 'gram_dict.yml')) as gram_dict_f:
+    gramdict = yaml.load(gram_dict_f, Loader=SafeLoader)
 
 
 
@@ -246,8 +238,8 @@ def heuristic_alignment(inst: Instance, heur_list = None):
     # into alignments on the words.
     for word_index, gloss_index in existing_alignments:
         trans_w = inst.trans[word_index]
-        gloss_m = inst.gloss[gloss_index]
-        trans_w.add_alignment(gloss_m)
+        gloss_item = inst.gloss[gloss_index] # type: Union[Word, SubWord]
+        trans_w.add_alignment(gloss_item)
 
     return existing_alignments
 

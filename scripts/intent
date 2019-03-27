@@ -101,7 +101,8 @@ if __name__ == '__main__':
         # Classify the gloss line:
         if pos_classifier:
             ROOT_LOGGER.debug('Using classifier for POS tags on instance {}'.format(inst.id))
-            gloss_class_tags = pos_classifier.classify(inst.gloss)
+            # TODO: ENSURE PROJECTED INFO IS ADDED WHEN REQUESTED
+            gloss_class_tags = pos_classifier.classify(inst.gloss, projected_tags=True, subword_tags=True, use_vocab=True)
             for gw, tag in zip(inst.gloss, gloss_class_tags):
                 gw.pos = tag
             xigt_add_pos(new_xigt_inst, inst.gloss, inst.gloss.id, 'classifier')

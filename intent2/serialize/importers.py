@@ -3,6 +3,7 @@ from collections import defaultdict
 
 import xigt
 import xigt.codecs.xigtxml
+from xigt.errors import XigtStructureError
 from xigt.model import Igt, Item
 from intent2.xigt_helpers import xigt_find
 from intent2.model import Word, GlossWord, TransWord, LangWord, SubWord, Phrase, TaggableMixin, Instance, Corpus
@@ -626,7 +627,7 @@ def parse_xigt_corpus(xigt_corpus, ignore_import_errors=True):
         try:
             intent_inst = parse_xigt_instance(xigt_inst)
             instances.append(intent_inst)
-        except ImportException as ie:
+        except (ImportException, XigtStructureError) as ie:
             IMPORT_LOG.error('There was an error importing instance "{}": {}'.format(xigt_inst.id, ie))
             if not ignore_import_errors:
                 raise ie
@@ -783,7 +784,7 @@ def parse_xigt_instance(xigt_inst: Igt):
     try:
         align_gloss_lang_sw(gloss_p, lang_p)
     except ImportException as ie:
-        IMPORT_LOG.error('Error aligning gloss and language tokens for instance "{}": {}'.format(xigt_inst.id, ie))
+        IMPORT_LOG.warning('Error aligning gloss and language tokens for instance "{}": {}'.format(xigt_inst.id, ie))
 
     # -- 2) Add any POS tags found.
     parse_pos(xigt_inst, 'm', id_to_object_mapping)

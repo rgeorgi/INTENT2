@@ -8,3 +8,4 @@ graphviz==0.10.1
 matplotlib==3.0.2
 lxml
 Pillow
+pyyaml

@@ -17,6 +17,10 @@ logging.basicConfig()
 LOG = logging.getLogger()
 
 def filter_files(pathlist: List[str], args):
+    """
+    Given a list of Xigt-xml paths, open each
+    and attempt to parse it.
+    """
     new_corpus = XigtCorpus()
 
     inst_count = 0
@@ -49,6 +53,11 @@ def filter_files(pathlist: List[str], args):
                     LOG.error(ste)
                     continue
 
+                # If a limit is defined, and we've hit it, stop processing.
+                if args.limit and inst_count > args.limit:
+                    return new_corpus
+
+
     return  new_corpus
 
 
@@ -75,6 +84,8 @@ if __name__ == '__main__':
 
     p.add_argument('--l-g-aln', help='Require instances have alignable lang/gloss lines', type=bool, default=True)
     p.add_argument('--g-pos', help='Require a gloss-line pos tier')
+
+    p.add_argument('--limit', help='Limit the number of instances selected', type=int, default=0)
 
     p.add_argument('--new-ids', action='store_true', help='Assign new IDs to the instances', default=False)
 

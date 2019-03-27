@@ -673,7 +673,7 @@ class Phrase(list, IdMixin, DependencyMixin):
 
     def __getitem__(self, i):
         """
-        :rtype: Word
+        :rtype: Union[Word, SubWord]
         """
         if isinstance(i, int):
             return super().__getitem__(i)
@@ -761,7 +761,7 @@ class Instance(IdMixin):
         :type trans: Phrase
         """
         self.lang = lang # type: Phrase
-        self.gloss = gloss # type: Phrase
+        self.gloss = gloss # type: Phrase[GlossWord]
         self.trans = trans # type: Phrase
         self._id = id
 

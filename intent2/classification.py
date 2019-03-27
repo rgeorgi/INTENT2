@@ -36,11 +36,17 @@ class LRWrapper(object):
         with open(path, 'rb') as f:
             return pickle.load(f)
 
-    def classify(self, word_tokens: List[GlossWord]):
+    def classify(self, word_tokens: List[GlossWord],
+                 projected_tags: bool=False, subword_tags: bool=False,
+                 use_vocab: bool = True):
         """
         Given a list of gloss words, extract features and
         """
-        vectors = [extract_gloss_word_feats(gw, self.vocab) for gw in word_tokens]
+        vectors = [extract_gloss_word_feats(gw, self.vocab,
+                                            projected_tag=gw.pos if projected_tags else None,
+                                            subword_tags=[gsw.pos for gsw in gw.subwords if gsw.pos] if subword_tags else [],
+                                            use_vocab=use_vocab)
+                   for gw in word_tokens]
         X = self.vectorizer.transform(vectors)
         predictions = self.model.predict(X)
         return predictions
@@ -67,7 +73,10 @@ class PreTokenizedCountVectorizer(CountVectorizer):
         super().__init__(**kwargs, tokenizer=dummy_tok, preprocessor=dummy_tok)
 
 
-def extract_gloss_word_feats(gloss_w: GlossWord, vocab: dict):
+def extract_gloss_word_feats(gloss_w: GlossWord, vocab: dict,
+                             projected_tag: str = None,
+                             subword_tags: List[str] = None,
+                             use_vocab: bool = True):
     """
     Given a gloss word, return the feature vector
     for classification.
@@ -78,30 +87,52 @@ def extract_gloss_word_feats(gloss_w: GlossWord, vocab: dict):
     en = load_spacy()
     d = en([text for index, text in gloss_w.subword_parts])
 
+    # If the subword_parts is empty, just use the literal
+    # word as the one feature (it should be PUNC)
+    if len(d) == 0:
+        X_word[gloss_w.string] = 1.0
+        return X_word
+
+    # Normalize the amount each subword contributes
+    amount = 1/len(d)
+
+    # -------------------------------------------
+    # Add the projected tag if provided
+    # -------------------------------------------
+    if projected_tag:
+        X_word['_projected_pos_{}'.format(projected_tag)] += 1.0
+
+    if subword_tags:
+        for subword_tag in subword_tags:
+            X_word['_projected_sw_pos_{}_'.format(subword_tag)] += amount
+
     # -------------------------------------------
     # Extract features from the subwords
     # -------------------------------------------
+
+
     for subword_token in d: # type: Token
         lower_subword = subword_token.text.lower()
         lemma = subword_token.lemma_ if subword_token.pos_ is not 'PUNCT' else None
-        if lemma:
-            X_word['_lemma_{}'.format(lemma)] += 1
+        if lemma and lemma != lower_subword:
+            X_word['_lemma_{}'.format(lemma)] += amount
 
         # If a vocab-to-tag mapping is provided,
         # use it add probabilities for this word.
-        if subword_token.text in vocab:
-            for tag in vocab[subword_token.text]:
-                X_word['_vocab_pos_{}'.format(tag)] += vocab[subword_token.text][tag]
+        if use_vocab:
+            if subword_token.text in vocab:
+                for tag in vocab[subword_token.text]:
+                    X_word['_vocab_pos_{}'.format(tag)] += vocab[subword_token.text][tag] * amount
 
-        # A feature indicating that part of this
-        # token is OOV might be helpful (for things like PROPN)
-        else:
-            X_word['_vocab_oov_'] += 1
+            # A feature indicating that part of this
+            # token is OOV might be helpful (for things like PROPN)
+            else:
+                X_word['_vocab_oov_'] += amount
 
         # If the lemma is the same as the word, add
         # the lemma, otherwise add both.
-        if not lemma or lemma != lower_subword:
-            X_word[lower_subword] += 1
+        if lemma == lower_subword:
+            X_word[lower_subword] += amount
 
     return X_word
 
