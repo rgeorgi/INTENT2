@@ -131,7 +131,12 @@ def merge_tiers(igt_id: str, tier_id: str, tiers: List[Tier],
     Given a set of tier objects, combine them.
     """
     LOG.debug('Merging tiers {} for instance {}'.format(','.join([t.id for t in tiers]), igt_id))
-    new_tier = Tier(id=tier_id)
+
+    # Make sure that the tiers being merged are all of the same type.
+    tier_types = {t.type for t in tiers}
+    assert len(tier_types) == 1
+    new_tier = Tier(id=tier_id,
+                    type=tier_types.pop())
     for tier in tiers:
         assert tier.id == tier.id
         new_tier.attributes.update(tier.attributes)
