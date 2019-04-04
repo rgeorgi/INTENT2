@@ -1,6 +1,7 @@
 import re
 import unittest
 import nltk
+import regex
 
 
 
@@ -109,8 +110,8 @@ def word_tokenize(phrase_string):
     :param phrase_string:
     :return:
     """
-    # split_phrase = re.findall('[\w\.\-\:]+', phrase_string)
-    split_phrase = nltk.word_tokenize(phrase_string)
+    split_phrase = regex.findall('[\w\.\-\:]+', phrase_string, flags=re.UNICODE)
+    # split_phrase = nltk.word_tokenize(phrase_string)
     return split_phrase
 
 def character_align(word_string, subword_string, skip_re='[\-\s]'):

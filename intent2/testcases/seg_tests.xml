@@ -1,0 +1,30 @@
+<xigt-corpus xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:olac="http://www.language-archives.org/OLAC/1.1/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <igt id="esu-58" doc-id="miyaoka" line-range="1-4" tag-types="M L G T">
+    <metadata>
+      <meta id="meta1">
+        <dc:subject olac:code="esu" xsi:type="olac:language">Yup'Ik</dc:subject>
+        <dc:language olac:code="en" xsi:type="olac:language">English</dc:language>
+      </meta>
+    </metadata>
+    <tier id="n" type="odin" state="normalized">
+      <item id="r1" line="1" tag="M"> b:(4-71a) vetted:a</item>
+      <item id="r2" line="2" tag="L"> angya-cuara-li-sciigat-uq</item>
+      <item id="r3" line="3" tag="G"> boat-small-make-cannot-IND.3sg</item>
+      <item id="r4" line="4" tag="T"> he cannot make a small boat</item>
+    </tier>
+  </igt>
+      <igt id="ikx-2" doc-id="adverbs.tex" line-range="1-3" tag-types="M L G T">
+    <metadata>
+      <meta id="meta1">
+        <dc:subject olac:code="ikx" xsi:type="olac:language">Ik</dc:subject>
+        <dc:language olac:code="en" xsi:type="olac:language">English</dc:language>
+      </meta>
+    </metadata>
+    <tier id="r" type="odin" state="normalized">
+      <item id="n1" line="1" tag="M"> b: vetted:a</item>
+      <item id="n2" line="2" tag="L">  Zízaaƙótùò       ròɓà     m̀ʉkà</item>
+      <item id="n3" line="3" tag="G"> fat.dist.comp.3sg.seq   people.nom   completely</item>
+      <item id="n4" line="4" tag="T">  ‘And the people fattened up completely!’</item>
+    </tier>
+  </igt>
+</xigt-corpus>

@@ -35,6 +35,7 @@ def merge_files(input_paths, output_path):
     # and build up a dictionary of overlapping
     # instances.
     for path in input_paths:
+        LOG.debug('Opening file {}'.format(path))
         with open(path, 'r') as xigt_f:
             xc = xigtxml.load(xigt_f)
             inst_counts.append(len(xc)) # Count the num instances in each corpus
@@ -130,13 +131,17 @@ def merge_tiers(igt_id: str, tier_id: str, tiers: List[Tier],
     """
     Given a set of tier objects, combine them.
     """
-    LOG.debug('Merging tiers {} for instance {}'.format(','.join([t.id for t in tiers]), igt_id))
 
     # Make sure that the tiers being merged are all of the same type.
     tier_types = {t.type for t in tiers}
     assert len(tier_types) == 1
+    tier_type = tier_types.pop()
+    LOG.debug('Merging tiers {} (type={}) for instance {}'.format(','.join([t.id for t in tiers]),
+                                                             tier_type,
+                                                             igt_id))
+
     new_tier = Tier(id=tier_id,
-                    type=tier_types.pop())
+                    type=tier_type)
     for tier in tiers:
         assert tier.id == tier.id
         new_tier.attributes.update(tier.attributes)

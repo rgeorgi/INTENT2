@@ -9,3 +9,4 @@ matplotlib==3.0.2
 lxml
 Pillow
 pyyaml
+regex>=2018
